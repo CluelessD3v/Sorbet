@@ -5,3 +5,5 @@ registry = "https://github.com/UpliftGames/wally-index"
 realm = "shared"
 
 [dependencies]
+signal = "sleitnick/signal@1.5.0"
+

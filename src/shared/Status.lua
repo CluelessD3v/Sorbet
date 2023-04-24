@@ -1,3 +1,6 @@
+local signal = require(game:GetService("ReplicatedStorage").Packages.signal) or require(script.Parent.signal)
+
+
 --[=[
     @class Status
     Status is the package itself, it contains both State and FSM.
@@ -40,6 +43,7 @@ export type Entity = any
     .InactiveEntities {[Entity]: true} -- Look up table of all inactive entities in the state machine
     .PrintStateChange boolean -- debug function to print state transitions
 ]=]
+
 export type FSM = {
     -- Properties
     InitialState       : State,
@@ -48,7 +52,15 @@ export type FSM = {
     Collections        : {[State]:{[Entity]: true}},
     ActiveEntities     : {[Entity]: true},
     InactiveEntities   : {[Entity]: true},
-    PrintStateChange   : boolean,
+	PrintStateChange   : boolean,
+
+	ChangedState       : typeof(signal.new()),
+	EntityRegistered   : typeof(signal.new()),
+	EntityUnregistered : typeof(signal.new()),
+	EntityActivated    : typeof(signal.new()),
+	EntityDeactivated  : typeof(signal.new()),
+
+
 
     --> Methods
     RegisterEntity                : (self: FSM, entity: Entity, initialState: State) -> nil,
@@ -70,6 +82,9 @@ export type FSM = {
 }
 
 
+type LifeCycleFunction = (entity: Entity, fsm: FSM) -> nil
+
+
 --[=[
     @interface State
     @within Status
@@ -83,15 +98,19 @@ export type State = {
     Name: string,
     
     --> Callbacks
-    OnEnter  : (entity: Entity, fsm: FSM, ...any) -> nil?,
-    OnUpdate : (entity: Entity, fsm: FSM, dt: number, ...any) -> nil?,
-    OnExit   : (entity: Entity, fsm: FSM, ...any) -> nil?,
+    OnEnter  : LifeCycleFunction?,
+    OnUpdate : LifeCycleFunction?,
+    OnExit   : LifeCycleFunction?,
 
     --> Methods
     Enter  : (self: State, entity: Entity, fsm: FSM, ...any) -> nil?,
     Exit   : (self: State, entity: Entity, fsm: FSM, ...any) -> nil?,
     Update : (self: State, entity: Entity, fsm: FSM, dt: number, ...any) -> nil?,
 }
+
+
+
+
 
 
 
@@ -129,7 +148,7 @@ end
 local finiteStateMachine = {} 
 finiteStateMachine.__index = finiteStateMachine
 
-function finiteStateMachine.new(initialState: State, statesList: {[string]: State}): FSM
+function finiteStateMachine.new(initialState: State, statesList: {State}): FSM
     local self = setmetatable({}, finiteStateMachine) :: FSM
     self.InitialState     = initialState
     
@@ -140,9 +159,16 @@ function finiteStateMachine.new(initialState: State, statesList: {[string]: Stat
     self.Collections        = {}
 
 
-    for name, state in statesList do
+    self.EntityActivated    = signal.new()
+    self.EntityDeactivated  = signal.new()
+    self.EntityRegistered   = signal.new()
+    self.EntityUnregistered = signal.new()
+    self.ChangedState       = signal.new()
+
+
+    for _, state in statesList do
         self.Collections[state] = {}
-        self.RegisteredStates[name] = state
+        self.RegisteredStates[state.Name] = state
     end
 
 
@@ -164,10 +190,12 @@ end
     it will be registered in the FSM Initial State
 ]=]
 function finiteStateMachine:RegisterEntity(entity: Entity, initialState: State?): nil
+    self = self ::FSM
     initialState = initialState or self.InitialState
     
     if self.RegisteredStates[initialState.Name] then
         self.RegisteredEntities[entity] = initialState
+        self.EntityRegistered:Fire(entity, initialState)
     else
         error(initialState.Name .." is not registered in the state machine! ")
     end
@@ -182,10 +210,16 @@ end
     The entity current state Exit method WILL NOT BE CALLED.
 ]=]
 function finiteStateMachine:UnRegisterEntity(entity: Entity): nil
-    local state = self.RegisteredEntities[entity]
-    self.Collections[state][entity] = nil
-    self.ActiveEntities[entity]     = nil
-    self.RegisteredEntities[entity] = nil
+    self = self :: FSM
+    if self.RegisteredEntities[entity] then
+        local state = self.RegisteredEntities[entity]
+        self.Collections[state][entity] = nil
+        self.ActiveEntities[entity]     = nil
+        self.RegisteredEntities[entity] = nil
+        self.EntityUnregistered:Fire(entity)
+    else
+        warn(entity, "is not registered in the machine!")  
+    end
 end
 
 
@@ -198,7 +232,7 @@ end
     if the optional Initial State argument is passed, then the entity will Enter that state, else
     the entity will enter the state it was originally registered in.
 ]=]
-function finiteStateMachine:ActivateEntity(entity: Entity, initialState: State?, ...): nil
+function finiteStateMachine:ActivateEntity(entity: Entity, initialState: State?): nil
     if not self.RegisteredEntities[entity] then
         warn(entity, "is not registered in the state machine!")
         return
@@ -207,17 +241,23 @@ function finiteStateMachine:ActivateEntity(entity: Entity, initialState: State?,
     if initialState then
         if self.RegisteredStates[initialState.Name] then
             self.RegisteredEntities[entity] = initialState
-            self.RegisteredEntities[entity]:Enter(entity, self, ...)
+            self.RegisteredEntities[entity]:Enter(entity, self)
+            self.EntityActivated:Fire(entity, initialState)
         else 
             warn(initialState.Name, "is not registered in the state machine, entering entity's registered state instead.")  
         end
     end
 
+    --# for the entity to be activated, it has to be registered first into the FSM
+    --# first. So eve if no initial state is passed, it's guaranteed the entity will
+    --# is registered and paired with a state, so enter that one instead.
+
     if not initialState then
-        self.RegisteredEntities[entity]:Enter(entity, self, ...)
+        self.RegisteredEntities[entity]:Enter(entity, self)
     end
 
     self.ActiveEntities[entity] = true
+    self.EntityActivated:Fire(entity, self:GetCurrentState(entity))
 end
 
 
@@ -235,7 +275,7 @@ function finiteStateMachine:DeactivateEntity(entity): nil
         self.RegisteredEntities[entity]:Exit(entity, self)
         self.ActiveEntities[entity]   = nil
         self.InactiveEntities[entity] = true
-
+        self.EntityDeactivated:Fire(entity)
 
     elseif self.RegisteredEntities[entity] and not self.ActiveEntities[entity] then
         warn(entity, "is not active")
@@ -299,7 +339,7 @@ end
     @within FSM
 
 
-    Sets all of the state machine's active entities 
+    Sets all registered entities in the state machine as Inactive 
 ]=]
 function finiteStateMachine:TurnOff()
     local activeRegisteredEntities = GetSetIntersection(self.RegisteredEntities, self.ActiveEntities)
@@ -314,16 +354,13 @@ end
     @within FSM
     @param entity Entity -- The entity to change state of.
     @param newState State -- The new state the entity will enter.
-    @param onExitData {any} -- Optional array of data passed to the entity's current state OnExit
-    @param onEntertData {any} -- Optional array of data passed to the entity's new state OnEnter
     
 
 
     Exits the entity from it's current state and enters it into the new given state.
 ]=]
-function finiteStateMachine:ChangeState(entity: Entity, newState: State, onExitData: {any}?, onEnterData: {any}?)
+function finiteStateMachine:ChangeState(entity: Entity, newState: State)
     if not newState then
-        print(self.RegisteredStates[newState.Name])
         warn("No new state was passed!")
         return
 
@@ -332,21 +369,17 @@ function finiteStateMachine:ChangeState(entity: Entity, newState: State, onExitD
         return
     end 
     
-    -- print(currentState, newState)
 
     if self.PrintStateChange then
-        local currentState = self.RegisteredEntities[entity] 
+        local currentState = self.RegisteredEntities[entity]
         warn(entity, "Coming from:", currentState.Name, "To:", newState.Name)
     end
 
-    onExitData  = onExitData or {}
-    onEnterData = onEnterData or {}
 
-    self.RegisteredEntities[entity]:Exit(entity, self, table.unpack(onExitData))
+    self.RegisteredEntities[entity]:Exit(entity, self)
     self.RegisteredEntities[entity] = newState
-    self.RegisteredEntities[entity]:Enter(entity, self, table.unpack(onEnterData))
-
-
+    self.RegisteredEntities[entity]:Enter(entity, self)
+    self.ChangedState:Fire(entity, newState)
 end
 
 
@@ -429,12 +462,13 @@ end
 -- !==                                      State
 -- !== ================================================================================||>
 
+
 local state = {} 
 state.__index = state
 
 local stateCount = 0
 
-function state.new(args)
+function state.new(args: State): State
     stateCount += 1
 
     local self = setmetatable({}, state)
@@ -443,22 +477,22 @@ function state.new(args)
     self.OnUpdate = args.OnUpdate or function()end
     self.OnExit   = args.OnExit or function()end
 
-    return self
+    return self 
 end
 
 
-function state:Enter(subject, fsm)
-    self.OnEnter(subject, fsm)
+function state:Enter(entity: Entity, fsm: FSM)
+    self.OnEnter(entity, fsm)
 end
 
 
-function state:Update(subject, fsm, dt)
-    self.OnUpdate(subject, fsm, dt)
+function state:Update(entity: Entity, fsm: FSM, dt: number)
+    self.OnUpdate(entity, fsm, dt)
 end
     
 
-function state:Exit(subject, fsm)
-    self.OnExit(subject, fsm)
+function state:Exit(entity: Entity, fsm: FSM)
+    self.OnExit(entity, fsm)
 end
 
 
