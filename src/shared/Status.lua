@@ -21,7 +21,7 @@ type Status = {
     An entity is a unique identifier used to create an entity, state pair. It is created when the through the Register/RegisterAndActivateEntity
     functions.
 
-    An entity can be accessed using the GetRegisteredEntities Getter
+    An entity can be accessed using the GetEntities Getter
 ]=]
 export type Entity = any
 
@@ -64,9 +64,9 @@ export type FSM = {
 
     --> Getters
     GetEntitiesInState    : (self: FSM, stateName: string) -> {Entity},
-    GetRegisteredEntities : (self: FSM) -> {[Entity]: State},
-    GetRegisteredStates   : (self: FSM) -> {State},
-    GetEntityCurrentState : (self: FSM, entity: Entity) -> State
+    GetEntities : (self: FSM) -> {[Entity]: State},
+    GetStates   : (self: FSM) -> {State},
+    GetCurrentState : (self: FSM, entity: Entity) -> State
 }
 
 
@@ -370,7 +370,7 @@ end
     
     Returns an entity-state map of all entities registered in the state machine and their current state
 ]=]
-function finiteStateMachine:GetRegisteredEntities(): {[Entity]: State}
+function finiteStateMachine:GetEntities(): {[Entity]: State}
     return self.RegisteredEntities
 end
 
@@ -391,7 +391,7 @@ end
 
     Returns all registered states in the state machine
 ]=]
-function finiteStateMachine:GetRegisteredStates(): {State}
+function finiteStateMachine:GetStates(): {State}
     return self.RegisteredStates
 end
 
@@ -401,7 +401,7 @@ end
     @param entity Entity -- The entity to ask which state is in
 
 ]=]
-function finiteStateMachine:GetEntityCurrentState(entity: Entity): State?
+function finiteStateMachine:GetCurrentState(entity: Entity): State?
     local currentState = self.RegisteredEntities[entity]
     if currentState then
         return currentState
