@@ -26,9 +26,25 @@ local testFSM = status.FSM.new(adding, {
 
 local a = {Pos = Vector2.new()}
 local b = {Pos = Vector2.new()}
+
+testFSM.EntityRegistered:Connect(function(entity)
+    print(entity, "Registered")
+    
+end)
+testFSM.EntityActivated:Connect(function(entity)
+    print(entity, "activated")
+end)
+
+testFSM.ChangedState:Connect(function(entity, newState)
+    print(entity, "changed state to", newState.Name)
+end)
+
+
 testFSM:RegisterEntity(a, adding)
 testFSM:RegisterEntity(b, adding)
+
 testFSM:TurnOn()
+
 testFSM:Update()
 testFSM:Update()
 

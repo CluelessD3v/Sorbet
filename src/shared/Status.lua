@@ -172,7 +172,7 @@ function finiteStateMachine.new(initialState: State, statesList: {State}): FSM
     end
 
 
-    self.PrintStateChange = true
+    self.PrintStateChange = false
 
 
     return self 
