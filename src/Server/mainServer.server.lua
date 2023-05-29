@@ -36,8 +36,8 @@ local Aging = Sorbet.State.new {
 	end,
 }
 
-local newFSM = Sorbet.Fsm.new(Born, { Aging })
 local Person = { Name = "Enrique", Age = 21 }
+local newFSM = Sorbet.Fsm.new(Born, {}, { Aging })
 
 Sorbet.Fsm.RegisterEntity(newFSM, Person, Born)
 Sorbet.Fsm.ActivateEntity(newFSM, Person)

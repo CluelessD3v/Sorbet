@@ -32,20 +32,10 @@ local function GetSetIntersection(set1: Set, set2: Set): Set
 	return result
 end
 
--- local function GetSetDifference(set1: Set, set2: Set): Set
--- 	local result: Set = {}
--- 	for k in pairs(set1) do
--- 		if not set2[k] then
--- 			result[k] = true
--- 		end
--- 	end
--- 	return result
--- end
-
 local Sorbet = {}
 
 local Fsm = {}
-Fsm.new = function(initialState: State, states: { State }?): FSM
+Fsm.new = function(initialState: State, entities: { Entity }, states: { State }): FSM
 	local self = {} :: FSM
 
 	self.ActiveEntities = {}
@@ -56,7 +46,12 @@ Fsm.new = function(initialState: State, states: { State }?): FSM
 
 	states = states or {}
 
-	for _, state in states :: { State } do
+	for _, entity in entities do
+		self.RegisteredEntities[entity] = initialState
+	end
+
+	--# Register all states
+	for _, state in states do
 		if self.RegisteredStates[state.Name] then
 			warn(state.Name, "found duplicate state")
 			continue
@@ -77,7 +72,9 @@ end
 --==/ Registering/Unregistering from FSM ===============================||>
 
 Fsm.RegisterEntity = function(fsm: FSM, entity: Entity, initialState: State?): nil
-	if not fsm.RegisteredEntities[entity] then
+	if fsm.RegisteredEntities[entity] then
+		warn(entity, "is already registered in the state machine")
+	else
 		fsm.RegisteredEntities[entity] = if initialState then initialState else fsm.InitialState
 	end
 	return nil
@@ -163,14 +160,19 @@ Fsm.Update = function(fsm: FSM, dt: number?): nil
 end
 
 Fsm.ChangeState = function(fsm: FSM, entity: Entity, newState: State): nil
-	if not fsm.RegisteredStates[newState.Name] then
-		warn(newState.Name, "is not registered in the state machine")
-		return nil
+	if newState then
+		if not fsm.RegisteredStates[newState.Name] then
+			warn(newState.Name, "is not registered in the state machine")
+			return nil
+		end
+
+		fsm.RegisteredEntities[entity].OnExit(entity, fsm)
+		fsm.RegisteredEntities[entity] = newState
+		fsm.RegisteredEntities[entity].OnEnter(entity, fsm)
+	else
+		warn(entity, "cannot change state, new state is nil!")
 	end
 
-	fsm.RegisteredEntities[entity].OnExit(entity, fsm)
-	fsm.RegisteredEntities[entity] = newState
-	fsm.RegisteredEntities[entity].OnEnter(entity, fsm)
 	return nil
 end
 
