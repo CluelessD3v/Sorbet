@@ -38,6 +38,9 @@ local Sorbet = {}
 
 local Fsm = {}
 Fsm.new = function(initialState: State, entities: { Entity }, states: { State }): FSM
+	assert(type(entities) == "table", "entities must be of type table!")
+	assert(type(states) == "table", "states must be of type table!")
+
 	local self = {} :: FSM
 
 	self.ActiveEntities = {}
@@ -46,8 +49,7 @@ Fsm.new = function(initialState: State, entities: { Entity }, states: { State })
 	self.RegisteredStates = {} :: { [StateName]: State }
 	self.InitialState = initialState
 
-	states = states or {}
-
+	--# Register entities
 	for _, entity in entities do
 		self.RegisteredEntities[entity] = initialState
 	end
