@@ -1,50 +1,49 @@
-local RunService = game:GetService("RunService")
-local status = require(game.ReplicatedStorage.Status)
+local RunService = game:GetService "RunService"
+local Sorbet = require(game.ReplicatedStorage.Sorbet)
 
+local Born = Sorbet.State.new {
+	Name = "Born",
+	OnEnter = function(entity, fsm)
+		print "You were born!"
+		entity.Age = 1
 
-print("ran")
-local idleTS = {}
-local idle = status.State.new({
-    Name = "Idle",
-    OnEnter = function(entity, fsm)
-        idleTS[entity] = time()
-    end,
+		Sorbet.Fsm.ChangeState(fsm, entity, fsm.RegisteredStates.Aging)
+	end,
+	OnExit = function(entity: any, fsm)
+		print "you are now aging!"
+	end,
+}
 
-    OnUpdate = function(entity, fsm, dt)
-        local currentTime = time() -  idleTS[entity]
-        print(currentTime) 
-        if currentTime >= 3 then
-            fsm:ChangeState(entity, fsm:GetState("Wandering"))
-            return
-        end
-    end
-})
+local Aging = Sorbet.State.new {
+	Name = "Aging",
+	OnEnter = function(entity, fsm)
+		print "You're aging!"
+	end,
 
-print("ran")
+	OnUpdate = function(entity, fsm)
+		entity.Age += 1
+		print(entity, "aged 1 year", entity.Age)
 
-local conns = {}
-local wandering = status.State.new({
-    Name = "Wandering",
-    OnEnter = function(entity, fsm)
-        conns[entity] = entity.Humanoid.MoveToFinished:Connect(function()
-            fsm:ChangeState(entity, fsm:GetState("Idle"))
-        end)
+		if entity.Age >= 21 then
+			print "you're legal"
+			Sorbet.Fsm.ChangeState(fsm, entity, fsm.RegisteredStates.Born)
+		end
+	end,
 
-        local randAngle = math.pi * 2 * math.random()
-        local x, z = math.sin(randAngle), math.cos(randAngle)
-        entity.Humanoid:MoveTo(entity:GetPivot().Position + Vector3.new(x, 3, z) * 5)
-    end,
+	OnExit = function(entity, fsm)
+		print "you stopped aging!"
+		-- body
+	end,
+}
 
-})
+local newFSM = Sorbet.Fsm.new(Born, { Aging })
+local Person = { Name = "Enrique", Age = 21 }
 
-local noobsFsm =  status.FSM.new(idle, {idle, wandering})
+Sorbet.Fsm.RegisterEntity(newFSM, Person, Born)
+Sorbet.Fsm.ActivateEntity(newFSM, Person)
 
-print(noobsFsm.RegisteredStates)
-
-for _, noob in workspace.Noobs:GetChildren() do
-    noobsFsm:RegisterAndActivateEntity(noob)
-end
-
-RunService.PostSimulation:Connect(function()
-    noobsFsm:Update()
+task.spawn(function()
+	while task.wait(1) do
+		Sorbet.Fsm.Update(newFSM)
+	end
 end)

@@ -1,0 +1,6 @@
+quote_style = "AutoPreferDouble"
+call_parentheses = "None"
+indent_width = 4
+
+[sort_requires]
+enabled = false
