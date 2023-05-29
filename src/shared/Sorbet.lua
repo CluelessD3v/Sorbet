@@ -5,6 +5,8 @@ local Signal = require(Packages.signal)
 type Entity = any
 type StateName = string
 
+--[=[
+]=]
 type FSM = {
 	InitialState: State,
 	ActiveEntities: { [Entity]: true },
@@ -141,7 +143,7 @@ end
 
 Fsm.TurnOff = function(fsm: FSM): nil
 	--# Gets all entities in both the registered & active table same deal as
-	--# Turn on it hurts performance if there are not many entities.
+	--# TurnOn(), it hurts performance if there are not many entities.
 	local activeRegisteredEntities = GetSetIntersection(fsm.RegisteredEntities, fsm.ActiveEntities)
 	for entity in activeRegisteredEntities do
 		Fsm.DeactivateEntity(fsm, entity)
@@ -166,9 +168,14 @@ Fsm.ChangeState = function(fsm: FSM, entity: Entity, newState: State): nil
 			return nil
 		end
 
+		--# The removal from the active table shenaningan is to prevent state's
+		--# OnUpdate() from being called while changing states...IK, not ideal.
+
+		fsm.ActiveEntities[entity] = nil
 		fsm.RegisteredEntities[entity].OnExit(entity, fsm)
 		fsm.RegisteredEntities[entity] = newState
 		fsm.RegisteredEntities[entity].OnEnter(entity, fsm)
+		fsm.ActiveEntities[entity] = true
 	else
 		warn(entity, "cannot change state, new state is nil!")
 	end
