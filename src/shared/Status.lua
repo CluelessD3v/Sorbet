@@ -43,18 +43,18 @@ export type Entity = any
     .InactiveEntities {[Entity]: true} -- Look up table of all inactive entities in the state machine
     .PrintStateChange boolean -- debug function to print state transitions
 ]=]
-
 export type FSM = {
     -- Properties
-    InitialState       : State,
-    RegisteredEntities : {[Entity]:State},
-    RegisteredStates   : {[string]: State},
-    Collections        : {[State]:{[Entity]: true}},
-    ActiveEntities     : {[Entity]: true},
-    InactiveEntities   : {[Entity]: true},
-	PrintStateChange   : boolean,
+	InitialState             : State,
+	RegisteredStates         : {[string]: State},
+	InactiveEntities         : {[Entity]: true},
+    ActiveEntities           : {[Entity]: true},
 
-	ChangedState       : typeof(signal.new()),
+	-- _RegisteredEntitiesState : {[Entity]:State},
+	-- _StateToEntityCollection : {[State]:{[Entity]: true}},
+	-- _PrintStateChange        : boolean,
+
+	EntityStateChanged : typeof(signal.new()),
 	EntityRegistered   : typeof(signal.new()),
 	EntityUnregistered : typeof(signal.new()),
 	EntityActivated    : typeof(signal.new()),
@@ -65,35 +65,31 @@ export type FSM = {
     --> Methods
     RegisterEntity                : (self: FSM, entity: Entity, initialState: State) -> nil,
     UnRegisterEntity              : (self: FSM, entity: Entity) -> nil,
+
     RegisterAndActivateEntity     : (self: FSM, entity: Entity, initialState: State) -> nil,
     UnRegisterAndDeactivateEntity : (self: FSM, entity: Entity) -> nil,
+    
     ActivateEntity                : (self: FSM, entity: Entity, initialState: State) -> nil,
     DeactivateEntity              : (self: FSM, entity: Entity) -> nil,
+    
     TurnOn                        : (self: FSM) -> nil,
     TurnOff                       : (self: FSM) -> nil,
+    
     Update                        : (self: FSM, dt: number) -> nil,
     ChangeState                   : (self: FSM, entity: Entity, newState: State, onExitData:{any}, onEnterData:{any}) -> nil,
 
     --> Getters
-    GetEntitiesInState    : (self: FSM, stateName: string) -> {Entity},
-    GetEntities : (self: FSM) -> {[Entity]: State},
-    GetStates   : (self: FSM) -> {State},
-    GetCurrentState : (self: FSM, entity: Entity) -> State
+	GetEntitiesInState    : (self: FSM, stateName: string | State) -> {Entity: true} | {},
+	GetState              : (self: FSM, stateName: string) -> State | nil,
+	GetEntityCurrentState : (self: FSM, entity: Entity) -> State | nil
+
 }
 
 
 type LifeCycleFunction = (entity: Entity, fsm: FSM) -> nil
 
 
---[=[
-    @interface State
-    @within Status
 
-    .OnEnter (entity: Entity, fsm: FSM, ...any) -> nil?
-    .OnUpdate (entity: Entity, fsm: FSM, dt: number, ...any) -> nil?
-    .OnExit (entity: Entity, fsm: FSM, ...any) -> nil?
-
-]=]
 export type State = {
     Name: string,
     
@@ -149,32 +145,36 @@ local finiteStateMachine = {}
 finiteStateMachine.__index = finiteStateMachine
 
 function finiteStateMachine.new(initialState: State, statesList: {State}): FSM
+    statesList = if statesList and type(statesList) == "table" then statesList else {}
+    
     local self = setmetatable({}, finiteStateMachine) :: FSM
     self.InitialState     = initialState
     
-    self.RegisteredStates   = {}
-    self.RegisteredEntities = {}
-    self.ActiveEntities     = {}
-    self.InactiveEntities   = {}
-    self.Collections        = {}
+    self.RegisteredStates         = {}
+    self._RegisteredEntitiesState = {}
+    self.ActiveEntities           = {}
+    self.InactiveEntities         = {}
+    self._StateToEntityCollection = {}
 
 
     self.EntityActivated    = signal.new()
     self.EntityDeactivated  = signal.new()
     self.EntityRegistered   = signal.new()
     self.EntityUnregistered = signal.new()
-    self.ChangedState       = signal.new()
+    self.EntityStateChanged = signal.new()
 
-
+    
     for _, state in statesList do
-        self.Collections[state] = {}
+        self._StateToEntityCollection[state] = {}
         self.RegisteredStates[state.Name] = state
     end
 
+    --# in case the initial state was not registered
+    if not self:GetState(initialState.Name) then
+        self.RegisteredStates[initialState.Name] = initialState
+    end
 
-    self.PrintStateChange = false
-
-
+    self._PrintStateChange = false
     return self 
 end
 
@@ -183,18 +183,19 @@ end
 --[=[
     @within FSM
     @param entity Entity -- The entity to be registered
-    @param initialState State? -- The initial state the entity should be registered in 
+    @param initialState State? -- (Optional) The initial state to assign to the entity. Defaults to the FSM's default initial state.
 
-    Registers the entity into the state machine without initializing it. if the optional
-    initial state argument is given then the entity will be registered in that state, else
-    it will be registered in the FSM Initial State
+    The entity will be added to the FSM's list of registered entities but will not immediately transition to the initial state. 
+    Instead, it will be inactive until explicitly activated by calling the 'ActivateEntity' method. If the initial state is not 
+    registered in the FSM, an error will be thrown.
+    
 ]=]
 function finiteStateMachine:RegisterEntity(entity: Entity, initialState: State?): nil
     self = self ::FSM
     initialState = initialState or self.InitialState
     
     if self.RegisteredStates[initialState.Name] then
-        self.RegisteredEntities[entity] = initialState
+        self._RegisteredEntitiesState[entity] = initialState
         self.EntityRegistered:Fire(entity, initialState)
     else
         error(initialState.Name .." is not registered in the state machine! ")
@@ -206,16 +207,16 @@ end
     @within FSM
     @param entity Entity -- The entity to be unregistered
 
-    Completely Removes the entity from the state machine. 
-    The entity current state Exit method WILL NOT BE CALLED.
+    The entity will be completely removed from the FSM, and its current state's 'Exit' method will not be called.
+    If the entity is not currently registered in the FSM, a warning message will be displayed.
+
 ]=]
 function finiteStateMachine:UnRegisterEntity(entity: Entity): nil
-    self = self :: FSM
-    if self.RegisteredEntities[entity] then
-        local state = self.RegisteredEntities[entity]
-        self.Collections[state][entity] = nil
+    if self._RegisteredEntitiesState[entity] then
+        local state = self._RegisteredEntitiesState[entity]
+        self._StateToEntityCollection[state][entity] = nil
         self.ActiveEntities[entity]     = nil
-        self.RegisteredEntities[entity] = nil
+        self._RegisteredEntitiesState[entity] = nil
         self.EntityUnregistered:Fire(entity)
     else
         warn(entity, "is not registered in the machine!")  
@@ -226,38 +227,37 @@ end
 --[=[
     @within FSM
     @param entity Entity -- The entity to be Activated
-    @param initialState State? -- The state the entity should be Activated in 
+    @param initialState State? -- (optional) The state the entity should be activated in
 
-    Inserts the Given entity into the FSM ActiveEntities table, which allows it to be updated
-    if the optional Initial State argument is passed, then the entity will Enter that state, else
-    the entity will enter the state it was originally registered in.
+    Activates the given entity by inserting it into the FSM's ActiveEntities table, which allows it to be updated.
+    If the optional initial state argument is passed, then the entity will enter that state. Otherwise, it will enter the 
+    state it was originally registered in. 
 ]=]
 function finiteStateMachine:ActivateEntity(entity: Entity, initialState: State?): nil
-    if not self.RegisteredEntities[entity] then
+    if not self._RegisteredEntitiesState[entity] then
         warn(entity, "is not registered in the state machine!")
         return
     end
 
     if initialState then
         if self.RegisteredStates[initialState.Name] then
-            self.RegisteredEntities[entity] = initialState
-            self.RegisteredEntities[entity]:Enter(entity, self)
+            self._RegisteredEntitiesState[entity] = initialState
+            self._RegisteredEntitiesState[entity]:Enter(entity, self)
             self.EntityActivated:Fire(entity, initialState)
         else 
             warn(initialState.Name, "is not registered in the state machine, entering entity's registered state instead.")  
         end
     end
 
-    --# for the entity to be activated, it has to be registered first into the FSM
-    --# first. So eve if no initial state is passed, it's guaranteed the entity will
-    --# is registered and paired with a state, so enter that one instead.
-
+    --# the entity is guaranteed to be registered in the state machine at this point
+    --# so enter the given initial state or if non is passed enter whatever state it 
+    --# is paired with
     if not initialState then
-        self.RegisteredEntities[entity]:Enter(entity, self)
+        self._RegisteredEntitiesState[entity]:Enter(entity, self)
     end
 
     self.ActiveEntities[entity] = true
-    self.EntityActivated:Fire(entity, self:GetCurrentState(entity))
+    self.EntityActivated:Fire(entity, self:GetEntityCurrentState(entity))
 end
 
 
@@ -265,19 +265,17 @@ end
     @within FSM
     @param entity Entity -- The entity to be deactivated
 
-
-
-    Inserts the entity's into the FSM Inactive table, which will prevent it from being updated.
-    The entity's current state Exit function will be called.
+    Removes the entity from the FSM's ActiveEntities table, which prevents it from being updated. 
+    The entity's current state's Exit function will be called, and it will be added to the FSM's Inactive table.
 ]=]
 function finiteStateMachine:DeactivateEntity(entity): nil
-    if self.RegisteredEntities[entity] and self.ActiveEntities[entity] then
-        self.RegisteredEntities[entity]:Exit(entity, self)
+    if self._RegisteredEntitiesState[entity] and self.ActiveEntities[entity] then
+        self._RegisteredEntitiesState[entity]:Exit(entity, self)
         self.ActiveEntities[entity]   = nil
         self.InactiveEntities[entity] = true
         self.EntityDeactivated:Fire(entity)
 
-    elseif self.RegisteredEntities[entity] and not self.ActiveEntities[entity] then
+    elseif self._RegisteredEntitiesState[entity] and not self.ActiveEntities[entity] then
         warn(entity, "is not active")
     else
         warn(entity, "is not registered in the machine")
@@ -292,10 +290,8 @@ end
     @param initialState State? -- The state the entity should be Activated in 
 
 
-
     Registers and activates the given entity in the state machine. If the initial state
     parameter is passed then it will enter that state, else it will enter the FSM inital state
-
     The entity's Enter method will be called.
 ]=]
 function finiteStateMachine:RegisterAndActivateEntity(entity: Entity, initialState: State): nil
@@ -308,12 +304,11 @@ end
     @within FSM
     @param entity Entity -- The entity to unregister from the state machine
 
-
-
-    Removes the given entity from the FSM, the entity's current state Exit method will be called.
+    Deactivates the given entity and removes it from the state machine.
+    The entity's current state Exit method will be called.
 ]=]
 function finiteStateMachine:UnRegisterAndDeactivateEntity(entity: Entity)
-    if not self.RegisteredEntities[entity] then
+    if not self._RegisteredEntitiesState[entity] then
         warn(entity, "is not registered in the machine!")
         return
     end
@@ -328,7 +323,7 @@ end
     Sets all registered entities in the state machine as Active
 ]=]
 function finiteStateMachine:TurnOn()
-    local inactiveRegisteredInstances = GetSetDifference(self.RegisteredEntities, self.ActiveEntities)
+    local inactiveRegisteredInstances = GetSetDifference(self._RegisteredEntitiesState, self.ActiveEntities)
     for entity in inactiveRegisteredInstances do
         self:ActivateEntity(entity, nil)
     end
@@ -342,44 +337,42 @@ end
     Sets all registered entities in the state machine as Inactive 
 ]=]
 function finiteStateMachine:TurnOff()
-    local activeRegisteredEntities = GetSetIntersection(self.RegisteredEntities, self.ActiveEntities)
+    local activeRegisteredEntities = GetSetIntersection(self._RegisteredEntitiesState, self.ActiveEntities)
     for entity in activeRegisteredEntities do
         self:DeactivateEntity(entity)
     end
 end
 
 
-
 --[=[
     @within FSM
     @param entity Entity -- The entity to change state of.
     @param newState State -- The new state the entity will enter.
-    
 
-
-    Exits the entity from it's current state and enters it into the new given state.
+    Changes the state of the given entity to the new state. This function exits the entity from
+    its current state and enters it into the new state. If the new state is not registered in
+    the state machine, the function will warn the user and do nothing. If the 
 ]=]
-function finiteStateMachine:ChangeState(entity: Entity, newState: State)
-    if not newState then
-        warn("No new state was passed!")
-        return
-
-    elseif not self.RegisteredStates[newState.Name] then
-        warn(newState.Name, "is not registered in the state machine!")
+function finiteStateMachine:ChangeState(entity: Entity, newState: State): nil
+    if not self:GetState(newState.Name) then
+        warn(entity, "attempted to change state, but", newState, "is not registered in the state machine!")
         return
     end 
-    
 
-    if self.PrintStateChange then
-        local currentState = self.RegisteredEntities[entity]
+    if self._PrintStateChange then
+        local currentState = self._RegisteredEntitiesState[entity]
         warn(entity, "Coming from:", currentState.Name, "To:", newState.Name)
     end
 
+    local oldState = self:GetEntityCurrentState(entity)
 
-    self.RegisteredEntities[entity]:Exit(entity, self)
-    self.RegisteredEntities[entity] = newState
-    self.RegisteredEntities[entity]:Enter(entity, self)
-    self.ChangedState:Fire(entity, newState)
+
+
+    self._RegisteredEntitiesState[entity]:Exit(entity, self)
+    self._RegisteredEntitiesState[entity] = newState
+    self._RegisteredEntitiesState[entity]:Enter(entity, self)
+
+    self.EntityStateChanged:Fire(entity, newState, oldState)
 end
 
 
@@ -387,12 +380,13 @@ end
     @within FSM
     @param dt number -- delta time
 
-    Updates all active entities in the State machine.
+    Updates all active entities in the state machine by calling their Update method with the given delta time. Only 
+    entities that are both registered and active will be updated.
 ]=]
-function finiteStateMachine:Update(dt)
-    local activeRegisteredEntities = GetSetIntersection(self.RegisteredEntities, self.ActiveEntities)
+function finiteStateMachine:Update(dt: number)
+    local activeRegisteredEntities = GetSetIntersection(self._RegisteredEntitiesState, self.ActiveEntities)
     for entity in activeRegisteredEntities do
-        self.RegisteredEntities[entity]:Update(entity, self, dt)
+        self._RegisteredEntitiesState[entity]:Update(entity, self, dt)
     end
 end
 
@@ -400,59 +394,50 @@ end
 
 --[=[
     @within FSM
+    @param state string | State -- The name or reference of the state to get the collection of entities from.
     
-    Returns an entity-state map of all entities registered in the state machine and their current state
+    Returns a table of entities that are currently registered in the given state. 
+    The returned table has the entities as keys and the value true. 
+    If the state is not registered in the state machine, a warning is displayed and an empty table 
+    is returned.
 ]=]
-function finiteStateMachine:GetEntities(): {[Entity]: State}
-    return self.RegisteredEntities
-end
-
-
---[=[
-    @within FSM
-    @param state State -- The state the entities will be gotten from.
-
-    Returns an array of entities in the given state
-]=]
-function finiteStateMachine:GetEntitiesInState(state: State): {Entity}
-    local entitiesInState = self.Collections[state] 
-    return entitiesInState
-end
-
---[=[
-    @within FSM
-
-    Returns all registered states in the state machine
-]=]
-function finiteStateMachine:GetStates(): {State}
-    return self.RegisteredStates
-end
-
-
---[=[
-    @within FSM
-    @param entity Entity -- The entity to ask which state is in
-
-]=]
-function finiteStateMachine:GetCurrentState(entity: Entity): State?
-    local currentState = self.RegisteredEntities[entity]
-    if currentState then
-        return currentState
+function finiteStateMachine:GetEntitiesInState(state: string | State): {Entity: true} | {}
+    local stateName = if type(state) == "string" then state else state.Name
+    
+    if not stateName then
+        warn(stateName, "is not registered in the state machine!")
+        return {}
     end
+
+    local collection = self._StateToEntityCollection[stateName]
+    return collection
 end
 
 
 --[=[
     @within FSM
-    @param entity Entity -- The entity to ask which state is in
-    @param state State -- The state to get entity from
-
-    Returns either true or false depending whether the given entity finds itself in the given
-    state
+    @param entity Entity -- The entity to get the state from.
+    Retrieves the current state for the given entity, if it is registered in the state machine. 
+    Returns nil the entity is not registered.
 ]=]
-function finiteStateMachine:IsInState(entity: Entity, state: State): boolean
-    return if self.Collections[state][entity] then true else false
+function finiteStateMachine:GetEntityCurrentState(entity: Entity): State | nil
+    return self._RegisteredEntitiesState[entity] or warn(entity, "is not registered in the state machine") and nil
 end
+
+
+--[=[
+    @within FSM
+    @param stateName string -- The name of the state to retrieve.
+
+    Returns the state with the given name, or `nil` if no such state is found in the state machine. 
+    Note that the state must be registered in the state machine before it can be retrieved with this function.
+]=]
+function finiteStateMachine:GetState(stateName: string ): State | nil
+    local state = self.RegisteredStates[stateName]
+    return state or warn(state, "is not registered in the state machine!") and nil
+end
+
+
 
 
 
@@ -461,7 +446,25 @@ end
 -- !== ================================================================================||>
 -- !==                                      State
 -- !== ================================================================================||>
+--[=[
+    @interface State
+    @within Status
 
+    .Name: string -- state name used as identifier
+    .OnEnter (entity: Entity, fsm: FSM, ...any) -> nil?
+    .OnUpdate (entity: Entity, fsm: FSM, dt: number, ...any) -> nil?
+    .OnExit (entity: Entity, fsm: FSM, ...any) -> nil?
+
+]=]
+
+
+type stateProperties = {
+    Name: string,
+    OnEnter  : (entity: Entity, fsm: FSM) -> nil,
+    OnUpdate : (entity: Entity, fsm: FSM, dt: number) -> nil,
+    OnExit   : (entity: Entity, fsm: FSM) -> nil,
+
+}
 
 local state = {} 
 state.__index = state
@@ -481,16 +484,38 @@ function state.new(args: State): State
 end
 
 
+--[=[
+    @within State
+    @param entity Entity -- The entity that is entering the state.
+    @param fsm FSM -- The state machine that is operating on this state.
+
+    This function is called when the entity enters this state in the state machine.
+]=]
 function state:Enter(entity: Entity, fsm: FSM)
     self.OnEnter(entity, fsm)
 end
 
 
+--[=[
+    @within State
+    @param entity Entity -- The entity that is currently in this state.
+    @param fsm FSM -- The state machine that is operating on this state.
+    @param dt number -- The delta time since the last frame.
+
+    This function is called every frame while the entity is in this state in the state machine.
+]=]
 function state:Update(entity: Entity, fsm: FSM, dt: number)
     self.OnUpdate(entity, fsm, dt)
 end
     
 
+--[=[
+    @within State
+    @param entity Entity -- The entity that is exiting the state.
+    @param fsm FSM -- The state machine that is operating on this state.
+
+    This function is called when the entity exits this state in the state machine.
+]=]
 function state:Exit(entity: Entity, fsm: FSM)
     self.OnExit(entity, fsm)
 end

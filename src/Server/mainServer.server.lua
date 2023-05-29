@@ -1,57 +1,50 @@
+local RunService = game:GetService("RunService")
 local status = require(game.ReplicatedStorage.Status)
 
 
-local adding = status.State.new({
-    OnUpdate = function(entity, fsm: status.FSM)
-        entity.Pos = entity.Pos + Vector2.new(10, 0)
-        if entity.Pos.X >= 10 then
-            fsm:ChangeState(entity, fsm.RegisteredStates.State2)
+print("ran")
+local idleTS = {}
+local idle = status.State.new({
+    Name = "Idle",
+    OnEnter = function(entity, fsm)
+        idleTS[entity] = time()
+    end,
+
+    OnUpdate = function(entity, fsm, dt)
+        local currentTime = time() -  idleTS[entity]
+        print(currentTime) 
+        if currentTime >= 3 then
+            fsm:ChangeState(entity, fsm:GetState("Wandering"))
+            return
         end
     end
 })
 
+print("ran")
 
-local scaling = status.State.new({
-    OnUpdate = function(entity)
-        entity.Pos = entity.Pos * 2
-        print(entity.Pos)
-    end
+local conns = {}
+local wandering = status.State.new({
+    Name = "Wandering",
+    OnEnter = function(entity, fsm)
+        conns[entity] = entity.Humanoid.MoveToFinished:Connect(function()
+            fsm:ChangeState(entity, fsm:GetState("Idle"))
+        end)
+
+        local randAngle = math.pi * 2 * math.random()
+        local x, z = math.sin(randAngle), math.cos(randAngle)
+        entity.Humanoid:MoveTo(entity:GetPivot().Position + Vector3.new(x, 3, z) * 5)
+    end,
+
 })
 
-local testFSM = status.FSM.new(adding, {
-    adding,
-    scaling,
-})
+local noobsFsm =  status.FSM.new(idle, {idle, wandering})
 
+print(noobsFsm.RegisteredStates)
 
-local a = {Pos = Vector2.new()}
-local b = {Pos = Vector2.new()}
+for _, noob in workspace.Noobs:GetChildren() do
+    noobsFsm:RegisterAndActivateEntity(noob)
+end
 
-testFSM.EntityRegistered:Connect(function(entity)
-    print(entity, "Registered")
-    
+RunService.PostSimulation:Connect(function()
+    noobsFsm:Update()
 end)
-testFSM.EntityActivated:Connect(function(entity)
-    print(entity, "activated")
-end)
-
-testFSM.ChangedState:Connect(function(entity, newState)
-    print(entity, "changed state to", newState.Name)
-end)
-
-
-testFSM:RegisterEntity(a, adding)
-testFSM:RegisterEntity(b, adding)
-
-testFSM:TurnOn()
-
-testFSM:Update()
-testFSM:Update()
-
-print(a.Pos, b.Pos)
-
--- local dt = task.wait()
--- while true do
---     print(a, b)
---     dt = task.wait(1)
--- end
