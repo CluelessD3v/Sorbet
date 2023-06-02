@@ -1,49 +1,68 @@
 local RunService = game:GetService "RunService"
 local Sorbet = require(game.ReplicatedStorage.Sorbet)
 
-local Born = Sorbet.State.new {
-	Name = "Born",
-	OnEnter = function(entity, fsm)
-		print "You were born!"
-		entity.Age = 1
+local idleTimeStamps = {}
+local idleConns = {}
+local idle = Sorbet.State.new {
+	Name = "Idle",
 
-		Sorbet.Fsm.ChangeState(fsm, entity, fsm.RegisteredStates.Aging)
-	end,
-	OnExit = function(entity: any, fsm)
-		print "you are now aging!"
-	end,
-}
-
-local Aging = Sorbet.State.new {
-	Name = "Aging",
-	OnEnter = function(entity, fsm)
-		print "You're aging!"
+	OnEnter = function(entity)
+		print "Am idle!"
+		idleTimeStamps[entity] = time()
 	end,
 
 	OnUpdate = function(entity, fsm)
-		entity.Age += 1
-		print(entity, "aged 1 year", entity.Age)
-
-		if entity.Age >= 21 then
-			print "you're legal"
-			Sorbet.Fsm.ChangeState(fsm, entity, fsm.RegisteredStates.Born)
-		end
+		idleConns[RunService.PostSimulation:Connect(function()
+			if time() - idleTimeStamps[entity] >= 3 then
+				Sorbet.Fsm.ChangeState(fsm, entity, fsm.RegisteredStates.Wandering)
+				return
+			end
+		end)] =
+			true
+		-- print(time() - idleTimeStamps[entity])
 	end,
 
-	OnExit = function(entity, fsm)
-		print "you stopped aging!"
-		-- body
+	OnExit = function(entity)
+		idleTimeStamps[entity] = time()
+		for conn in idleConns do
+			conn:Disconnect()
+		end
 	end,
 }
 
-local Person = { Name = "Enrique", Age = 21 }
-local newFSM = Sorbet.Fsm.new(Born, {}, { Aging })
+local wanderingCons = {}
+local Wandering = Sorbet.State.new {
+	Name = "Wandering",
+	OnEnter = function(entity: Model & { Humanoid: Humanoid }, fsm)
+		print "Wandering"
+		local randAngle = math.random() * math.pi * 2
+		local x = math.cos(randAngle)
+		local z = math.sin(randAngle)
 
-Sorbet.Fsm.RegisterEntity(newFSM, Person, Born)
-Sorbet.Fsm.ActivateEntity(newFSM, Person)
+		local myPos = entity:GetPivot().Position
+		local direction = Vector3.new(x, 0, z) * 10
+		local targetPos = (myPos + direction)
+		entity.Humanoid:MoveTo(targetPos)
 
-task.spawn(function()
-	while task.wait(1) do
-		Sorbet.Fsm.Update(newFSM)
-	end
+		wanderingCons[entity.Humanoid.MoveToFinished:Once(function()
+			Sorbet.Fsm.ChangeState(fsm, entity, fsm.RegisteredStates.Idle)
+		end)] =
+			true
+	end,
+
+	OnExit = function(entity)
+		for conn in wanderingCons do
+			conn:Disconnect()
+		end
+	end,
+}
+
+local npcStateMachine = Sorbet.Fsm.new(idle, { Wandering }, { workspace.Knight })
+
+for entity in npcStateMachine.RegisteredEntities do
+	Sorbet.Fsm.ActivateEntity(npcStateMachine, entity)
+end
+
+RunService.Heartbeat:Connect(function()
+	Sorbet.Fsm.Update(npcStateMachine)
 end)

@@ -1,16 +1,16 @@
 --!strict
 local Packages = game.ReplicatedStorage.Packages
-local Signal = require(Packages.signal)
+local Signal = require(script.Signal)
 
 type Entity = any
 type StateName = string
 
---[=[
-]=]
-type FSM = {
-	InitialState: State,
+export type FSM = {
 	ActiveEntities: { [Entity]: true },
+	UpdateableEntities: { [Entity]: true },
 	InactiveEntities: { [Entity]: true },
+
+	InitialState: State,
 	RegisteredEntities: { [Entity]: State },
 	RegisteredStates: { [StateName]: State },
 }
@@ -22,6 +22,7 @@ export type State = {
 	OnExit: (entity: Entity, fsm: FSM) -> nil,
 }
 
+--==/ Aux functions ===============================||>
 type Set = { [any]: any }
 
 local function GetSetIntersection(set1: Set, set2: Set): Set
@@ -34,10 +35,24 @@ local function GetSetIntersection(set1: Set, set2: Set): Set
 	return result
 end
 
-local Sorbet = {}
+-- !== ================================================================================||>
+-- !== Fsm namespace
+-- !== ================================================================================||>
+
+--# "Trays" used so the state machine can "remember" entities state when calling
+--# `Pause()`/`Resume()`. useful when i.e: an entity is inactive and you resume
+--# the state machine, it will remain inactive.
+
+local stateMachineTrays = {} :: {
+	[FSM]: {
+		ActiveWhenPaused: { [Entity]: true },
+		InactiveWhenPaused: { [Entity]: true },
+	},
+}
 
 local Fsm = {}
-Fsm.new = function(initialState: State, entities: { Entity }, states: { State }): FSM
+Fsm.new = function(initialState: State, states: { State }, entities: { Entity }?): FSM
+	entities = entities or {}
 	assert(type(entities) == "table", "entities must be of type table!")
 	assert(type(states) == "table", "states must be of type table!")
 
@@ -45,6 +60,8 @@ Fsm.new = function(initialState: State, entities: { Entity }, states: { State })
 
 	self.ActiveEntities = {}
 	self.InactiveEntities = {}
+	self.UpdateableEntities = {}
+
 	self.RegisteredEntities = {}
 	self.RegisteredStates = {} :: { [StateName]: State }
 	self.InitialState = initialState
@@ -105,6 +122,7 @@ Fsm.ActivateEntity = function(fsm: FSM, entity: Entity, initialState: State?): n
 			fsm.InactiveEntities[entity] = nil
 			fsm.ActiveEntities[entity] = true
 			entityState.OnEnter(entity, fsm)
+			fsm.UpdateableEntities[entity] = true
 		end
 	else
 		warn(entity, "is not registered in the state machine")
@@ -122,6 +140,7 @@ Fsm.DeactivateEntity = function(fsm: FSM, entity: Entity): nil
 		else
 			fsm.ActiveEntities[entity] = nil
 			fsm.InactiveEntities[entity] = true
+			fsm.UpdateableEntities[entity] = nil
 			entityState.OnExit(entity, fsm)
 		end
 	else
@@ -137,7 +156,7 @@ Fsm.TurnOn = function(fsm: FSM): nil
 	--# it hurts performance if there are few entities tho.
 	local inactiveRegisteredInstances = GetSetIntersection(fsm.RegisteredEntities, fsm.InactiveEntities)
 	for entity in inactiveRegisteredInstances do
-		Fsm.ActivateEntity(fsm, entity)
+		Fsm.ActivateEntity(fsm, entity) --> activate will make them active
 	end
 
 	return nil
@@ -148,15 +167,44 @@ Fsm.TurnOff = function(fsm: FSM): nil
 	--# TurnOn(), it hurts performance if there are not many entities.
 	local activeRegisteredEntities = GetSetIntersection(fsm.RegisteredEntities, fsm.ActiveEntities)
 	for entity in activeRegisteredEntities do
-		Fsm.DeactivateEntity(fsm, entity)
+		Fsm.DeactivateEntity(fsm, entity) --> deactivate will make them inactive
 	end
 
 	return nil
 end
 
+--==/ Pause/Resume ===============================||>
+Fsm.Pause = function(fsm: FSM)
+	local fsmTrays = stateMachineTrays[fsm]
+
+	for entity in fsm.UpdateableEntities do
+		fsm.UpdateableEntities[entity] = nil
+
+		--# optimization: Logically, if an entity's updateable then it's also
+		--# active, so slide it into the ActiveWhenPaused tray while at it.
+		fsmTrays.ActiveWhenPaused[entity] = true
+	end
+
+	for entity in fsm.InactiveEntities do
+		fsmTrays.InactiveWhenPaused[entity] = true
+	end
+end
+
+Fsm.Resume = function(fsm)
+	local fsmTrays = stateMachineTrays[fsm]
+	for entity in fsm.InactiveEntities do
+		fsmTrays.InactiveWhenPaused[entity] = nil
+	end
+
+	for entity in fsmTrays.ActiveWhenPaused do
+		fsmTrays.ActiveWhenPaused[entity] = nil
+		fsm.UpdateableEntities[entity] = true
+	end
+end
+
 --==/ Change state & update entities ===============================||>
 Fsm.Update = function(fsm: FSM, dt: number?): nil
-	for entity in fsm.ActiveEntities do
+	for entity in fsm.UpdateableEntities do
 		fsm.RegisteredEntities[entity].OnUpdate(entity, fsm, dt :: number)
 	end
 
@@ -170,14 +218,16 @@ Fsm.ChangeState = function(fsm: FSM, entity: Entity, newState: State): nil
 			return nil
 		end
 
-		--# The removal from the active table shenaningan is to prevent state's
-		--# OnUpdate() from being called while changing states...IK, not ideal.
+		--# In case the entity is not active, just make it active right away.
+		fsm.ActiveEntities[entity] = true
 
-		fsm.ActiveEntities[entity] = nil
+		--# Yeet out entity from updateable table while changing state which
+		--# prevents un-expected behavior
+		fsm.UpdateableEntities[entity] = nil
 		fsm.RegisteredEntities[entity].OnExit(entity, fsm)
 		fsm.RegisteredEntities[entity] = newState
 		fsm.RegisteredEntities[entity].OnEnter(entity, fsm)
-		fsm.ActiveEntities[entity] = true
+		fsm.UpdateableEntities[entity] = true --> make it updateable again
 	else
 		warn(entity, "cannot change state, new state is nil!")
 	end
@@ -185,10 +235,8 @@ Fsm.ChangeState = function(fsm: FSM, entity: Entity, newState: State): nil
 	return nil
 end
 
-Sorbet.Fsm = Fsm
-
 -- !== ================================================================================||>
--- !== State
+-- !== State namespace
 -- !== ================================================================================||>
 type Callback = (entity: Entity, fsm: FSM) -> nil
 type Update = (entity: Entity, fsm: FSM, dt: number) -> nil
@@ -212,6 +260,7 @@ State.new = function(constructArguments: {
 	return self
 end
 
-Sorbet.State = State
-
-return Sorbet
+return {
+	Fsm = Fsm,
+	State = State,
+}
