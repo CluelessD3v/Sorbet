@@ -12,14 +12,12 @@ local idle = Sorbet.State.new {
 	end,
 
 	OnUpdate = function(entity, fsm)
-		idleConns[RunService.PostSimulation:Connect(function()
-			if time() - idleTimeStamps[entity] >= 3 then
-				Sorbet.Fsm.ChangeState(fsm, entity, fsm.RegisteredStates.Wandering)
-				return
-			end
-		end)] =
-			true
-		-- print(time() - idleTimeStamps[entity])
+		if time() - idleTimeStamps[entity] >= 5 then
+			Sorbet.Fsm.ChangeState(fsm, entity, fsm.RegisteredStates.Wandering)
+			return
+		end
+
+		print(time() - idleTimeStamps[entity])
 	end,
 
 	OnExit = function(entity)
@@ -40,7 +38,7 @@ local Wandering = Sorbet.State.new {
 		local z = math.sin(randAngle)
 
 		local myPos = entity:GetPivot().Position
-		local direction = Vector3.new(x, 0, z) * 10
+		local direction = Vector3.new(x, 0, z) * 15
 		local targetPos = (myPos + direction)
 		entity.Humanoid:MoveTo(targetPos)
 
@@ -57,7 +55,7 @@ local Wandering = Sorbet.State.new {
 	end,
 }
 
-local npcStateMachine = Sorbet.Fsm.new(idle, { Wandering }, { workspace.Knight })
+local npcStateMachine = Sorbet.Fsm.new(idle, { Wandering }, { workspace.NpcTest.Knight })
 
 for entity in npcStateMachine.RegisteredEntities do
 	Sorbet.Fsm.ActivateEntity(npcStateMachine, entity)
@@ -65,4 +63,17 @@ end
 
 RunService.Heartbeat:Connect(function()
 	Sorbet.Fsm.Update(npcStateMachine)
+end)
+
+local Part = workspace.NpcTest.Part
+local CD: ClickDetector = Part.ClickDetector
+local running = true
+CD.MouseClick:Connect(function()
+	running = not running
+	print(running)
+	if running then
+		Sorbet.Fsm.PauseEntity(npcStateMachine, workspace.NpcTest.Knight)
+	else
+		Sorbet.Fsm.ResumeEntity(npcStateMachine, workspace.NpcTest.Knight)
+	end
 end)
