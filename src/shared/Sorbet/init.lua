@@ -1,5 +1,7 @@
 --!strict
+local ReplicatedStorage = game:GetService "ReplicatedStorage"
 local Packages = game.ReplicatedStorage.Packages
+local signal = require(ReplicatedStorage.Packages.signal)
 local Signal = require(script.Signal)
 
 type Entity = any
@@ -12,8 +14,20 @@ export type FSM = {
 
 	ActiveEntities: { [Entity]: true },
 	UpdateableEntities: { [Entity]: true },
+
 	RegisteredEntities: { [Entity]: State },
 	RegisteredStates: { [StateName]: State },
+	EntityActivated: typeof(signal.new()),
+	EntityDeactivated: typeof(signal.new()),
+	EntityResumed: typeof(signal.new()),
+	EntityPaused: typeof(signal.new()),
+	EntityRegistered: typeof(signal.new()),
+	EntityUnregistered: typeof(signal.new()),
+	EntityChangedState: typeof(signal.new()),
+	MachineActivated: typeof(signal.new()),
+	MachineDeactivated: typeof(signal.new()),
+	MachineResumed: typeof(signal.new()),
+	MachinePaused: typeof(signal.new()),
 }
 
 type FSMClass = typeof(setmetatable({} :: FSM, {}))
@@ -54,7 +68,6 @@ local stateMachineTrays = {} :: {
 }
 
 local Fsm = {}
-Fsm.__index = Fsm
 
 Fsm.new = function(initialState: State, states: { State }, entities: { Entity }?): FSM
 	entities = entities or {}
@@ -70,6 +83,18 @@ Fsm.new = function(initialState: State, states: { State }, entities: { Entity }?
 	self.RegisteredEntities = {}
 	self.RegisteredStates = {} :: { [StateName]: State }
 	self.InitialState = initialState
+
+	self.EntityActivated = signal.new()
+	self.EntityDeactivated = signal.new()
+	self.EntityResumed = signal.new()
+	self.EntityPaused = signal.new()
+	self.EntityRegistered = signal.new()
+	self.EntityUnregistered = signal.new()
+	self.EntityChangedState = signal.new()
+	self.MachineActivated = signal.new()
+	self.MachineDeactivated = signal.new()
+	self.MachineResumed = signal.new()
+	self.MachinePaused = signal.new()
 
 	--# Register entities
 	for _, entity in entities do
@@ -116,7 +141,7 @@ end
 
 --==/ Activate/Deactivate Entity ===============================||>
 
-Fsm.ActivateEntity = function(fsm: FSM, entity: Entity, initialState: State?): nil
+Fsm.ActivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
 	local entityState = fsm.RegisteredEntities[entity]
 	local entityIsActive = fsm.ActiveEntities[entity]
 
@@ -124,9 +149,14 @@ Fsm.ActivateEntity = function(fsm: FSM, entity: Entity, initialState: State?): n
 		if entityIsActive then
 			warn(entity, "is already active")
 		else
+			--# activate the entity in passed state, else activate it in the
+			--# state it was originally registered in.
+			entityState = if inState then inState else fsm.RegisteredEntities[entity]
 			fsm.ActiveEntities[entity] = true
 			entityState.OnEnter(entity, fsm)
 			fsm.UpdateableEntities[entity] = true
+
+			fsm.EntityActivated:Fire(entity)
 		end
 	else
 		warn(entity, "is not registered in the state machine")
@@ -135,16 +165,22 @@ Fsm.ActivateEntity = function(fsm: FSM, entity: Entity, initialState: State?): n
 	return nil
 end
 
-Fsm.DeactivateEntity = function(fsm: FSM, entity: Entity): nil
+Fsm.DeactivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
 	local entityState = fsm.RegisteredEntities[entity]
 	local entityIsActive = fsm.ActiveEntities[entity]
 	if entityState then
 		if not entityIsActive then
 			warn(entity, "is already inactive")
 		else
+			--# Deactivate the entity in passed state, else deactivate it in the
+			--# state it is currently in.
+			entityState = if inState then inState else fsm.RegisteredEntities[entity]
+
 			fsm.ActiveEntities[entity] = nil
 			fsm.UpdateableEntities[entity] = nil
 			entityState.OnExit(entity, fsm)
+
+			fsm.EntityDeactivated:Fire(entity)
 		end
 	else
 		warn(entity, "is not registered in the state machine")
@@ -153,11 +189,14 @@ Fsm.DeactivateEntity = function(fsm: FSM, entity: Entity): nil
 	return nil
 end
 
+--==/ Pause/Resume Entity ===============================||>
 Fsm.PauseEntity = function(fsm: FSM, entity: Entity)
 	local entityState = fsm.RegisteredEntities[entity]
 	if entityState then
 		fsm.ActiveEntities[entity] = nil
 		fsm.UpdateableEntities[entity] = nil
+
+		fsm.EntityPaused:Fire(entity)
 	else
 		warn(entity, "is not registered in the state machine")
 	end
@@ -170,6 +209,8 @@ Fsm.ResumeEntity = function(fsm: FSM, entity: Entity)
 	if entityState then
 		fsm.ActiveEntities[entity] = true
 		fsm.UpdateableEntities[entity] = true
+
+		fsm.EntityResumed:Fire()
 	else
 		warn(entity, "is not registered in the state machine")
 	end
@@ -177,50 +218,78 @@ Fsm.ResumeEntity = function(fsm: FSM, entity: Entity)
 	return nil
 end
 
---==/ Turn On & Off State machine ===============================||>
+--==/ Activate/Deactivate State Machine ===============================||>
 
--- Fsm.TurnOn = function(fsm: FSM): nil
--- 	--# Gets all entities in both the registered & inactive table
--- 	--# it hurts performance if there are few entities tho.
--- 	local inactiveRegisteredInstances = GetSetIntersection(fsm.RegisteredEntities, fsm.InactiveEntities)
--- 	for entity in inactiveRegisteredInstances do
--- 		Fsm.ActivateEntity(fsm, entity) --> activate will make them active
--- 	end
+Fsm.ActivateMachine = function(fsm: FSM): nil
+	if fsm.IsRunning then
+		warn "The state machine is already running"
+		return
+	end
 
--- 	return nil
--- end
+	for entity in fsm.RegisteredEntities do
+		Fsm.ActivateEntity(fsm, entity) --> activate will make them active
+	end
 
--- Fsm.TurnOff = function(fsm: FSM): nil
--- 	--# Gets all entities in both the registered & active table same deal as
--- 	--# TurnOn(), it hurts performance if there are not many entities.
--- 	local activeRegisteredEntities = GetSetIntersection(fsm.RegisteredEntities, fsm.ActiveEntities)
--- 	for entity in activeRegisteredEntities do
--- 		Fsm.DeactivateEntity(fsm, entity) --> deactivate will make them inactive
--- 	end
+	fsm.IsRunning = true
+	fsm.MachineActivated:Fire()
+	return nil
+end
 
--- 	return nil
--- end
+Fsm.DeactivateMachine = function(fsm: FSM): nil
+	if not fsm.IsRunning then
+		warn "The state machine is already NOT running"
+		return
+	end
 
---==/ Pause/Resume ===============================||>
--- Fsm.Pause = function(fsm: FSM)
--- 	fsm.IsRunning = false
--- 	for entity in fsm.UpdateableEntities do
--- 		fsm.RegisteredEntities[entity].OnExit(entity, fsm)
--- 		fsm.UpdateableEntities[entity] = nil
--- 	end
+	--# matters to put it here, prevents any further state updates & state
+	--# changes
+	fsm.IsRunning = false
 
--- 	-- fire stop signal here
--- end
+	--# allow for any current state transition to complete
+	task.defer(function()
+		--# Cheeky set operation to just get the active entities, instead of
+		--# iterating the entire entities list, it does hurt perf if there are
+		--# few entities thooo > - >
+		local activeRegisteredEntities = GetSetIntersection(fsm.RegisteredEntities, fsm.ActiveEntities)
+		for entity in activeRegisteredEntities do
+			fsm.UpdateableEntities[entity] = nil
+		end
+	end)
 
--- Fsm.Resume = function(fsm: FSM)
--- 	fsm.IsRunning = true
--- 	for entity in fsm.ActiveEntities do
--- 		fsm.RegisteredEntities[entity].OnEnter(entity, fsm)
--- 		fsm.UpdateableEntities[entity] = true
--- 	end
+	fsm.MachineDeactivated:Fire()
+	return nil
+end
 
--- 	-- fire resume signal here
--- end
+--==/ Pause/Resume State Machine ===============================||>
+Fsm.PauseMachine = function(fsm: FSM)
+	if not fsm.IsRunning then
+		warn "The state machine is already NOT running"
+		return
+	end
+
+	--# matters to put it here, prevents any further state updates & state
+	--# changes
+	fsm.IsRunning = false
+
+	--# allow for any current state transition to complete
+	task.defer(function()
+		for entity in fsm.UpdateableEntities do
+			fsm.UpdateableEntities[entity] = nil
+		end
+	end)
+
+	fsm.MachinePaused:Fire()
+end
+
+Fsm.ResumeMachine = function(fsm: FSM)
+	--# insert active entities to updateable before allowing the machine to run
+	for entity in fsm.ActiveEntities do
+		fsm.UpdateableEntities[entity] = true
+	end
+
+	fsm.IsRunning = true
+	fsm.MachineResumed:Fire()
+end
 
 --==/ Change state & update entities ===============================||>
 Fsm.Update = function(fsm: FSM, dt: number?): nil
@@ -247,6 +316,8 @@ Fsm.ChangeState = function(fsm: FSM, entity: Entity, newState: State): nil
 			return nil
 		end
 
+		local oldState = fsm.RegisteredEntities[entity]
+
 		--# In case the entity is not active, just make it active right away.
 		fsm.ActiveEntities[entity] = true
 
@@ -257,6 +328,8 @@ Fsm.ChangeState = function(fsm: FSM, entity: Entity, newState: State): nil
 		fsm.RegisteredEntities[entity] = newState
 		fsm.RegisteredEntities[entity].OnEnter(entity, fsm)
 		fsm.UpdateableEntities[entity] = true --> make it updateable again
+
+		fsm.EntityChangedState:Fire(entity, newState, oldState)
 	else
 		warn(entity, "cannot change state, new state is nil!")
 	end

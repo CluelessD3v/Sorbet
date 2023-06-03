@@ -72,8 +72,8 @@ CD.MouseClick:Connect(function()
 	running = not running
 	print(running)
 	if running then
-		Sorbet.Fsm.PauseEntity(npcStateMachine, workspace.NpcTest.Knight)
+		Sorbet.Fsm.PauseMachine(npcStateMachine)
 	else
-		Sorbet.Fsm.ResumeEntity(npcStateMachine, workspace.NpcTest.Knight)
+		Sorbet.Fsm.ResumeMachine(npcStateMachine)
 	end
 end)
