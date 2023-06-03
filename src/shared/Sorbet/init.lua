@@ -8,13 +8,13 @@ type Entity = any
 type StateName = string
 
 export type FSM = {
+	--* properties
 	IsRunning: boolean,
-	IsOn: boolean,
 	InitialState: State,
-
 	ActiveEntities: { [Entity]: true },
 	UpdateableEntities: { [Entity]: true },
 
+	--* signals
 	RegisteredEntities: { [Entity]: State },
 	RegisteredStates: { [StateName]: State },
 	EntityActivated: typeof(signal.new()),
@@ -37,6 +37,7 @@ export type State = {
 	OnEnter: (entity: Entity, fsm: FSM) -> nil,
 	OnUpdate: (entity: Entity, fsm: FSM, dt: number) -> nil,
 	OnExit: (entity: Entity, fsm: FSM) -> nil,
+	Entities: { [Entity]: true },
 }
 
 --==/ Aux functions ===============================||>
@@ -96,9 +97,10 @@ Fsm.new = function(initialState: State, states: { State }, entities: { Entity }?
 	self.MachineResumed = signal.new()
 	self.MachinePaused = signal.new()
 
-	--# Register entities
+	--# Register entities & put them in the initial state
 	for _, entity in entities do
 		self.RegisteredEntities[entity] = initialState
+		initialState.Entities[entity] = true
 	end
 
 	--# Register all states
@@ -127,6 +129,7 @@ Fsm.RegisterEntity = function(fsm: FSM, entity: Entity, initialState: State?): n
 		warn(entity, "is already registered in the state machine")
 	else
 		fsm.RegisteredEntities[entity] = if initialState then initialState else fsm.InitialState
+		fsm.RegisteredEntities[entity].Entities[entity] = true
 	end
 	return nil
 end
@@ -134,6 +137,7 @@ end
 Fsm.UnregisterEntity = function(fsm: FSM, entity: Entity): nil
 	--# Yeet the entity from the state machine entirely
 	fsm.UpdateableEntities[entity] = nil
+	fsm.RegisteredEntities[entity].Entities[entity] = nil
 	fsm.ActiveEntities[entity] = nil
 	fsm.RegisteredEntities[entity] = nil
 	return nil
@@ -150,8 +154,13 @@ Fsm.ActivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
 			warn(entity, "is already active")
 		else
 			--# activate the entity in passed state, else activate it in the
-			--# state it was originally registered in.
+			--# state it was originally registered in. Also removing it from the
+			--# State Entities collection prevents an if statement mess, so just
+			--# remove from state and insert to new one regardless if it changed.
+			fsm.RegisteredEntities[entity].Entities[entity] = nil
 			entityState = if inState then inState else fsm.RegisteredEntities[entity]
+			fsm.RegisteredEntities[entity].Entities[entity] = true
+
 			fsm.ActiveEntities[entity] = true
 			entityState.OnEnter(entity, fsm)
 			fsm.UpdateableEntities[entity] = true
@@ -173,8 +182,12 @@ Fsm.DeactivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
 			warn(entity, "is already inactive")
 		else
 			--# Deactivate the entity in passed state, else deactivate it in the
-			--# state it is currently in.
+			--# state it was originally registered in. Also removing it from the
+			--# State Entities collection prevents an if statement mess, so just
+			--# remove from state and insert to new one regardless if it changed.
+			fsm.RegisteredEntities[entity].Entities[entity] = nil
 			entityState = if inState then inState else fsm.RegisteredEntities[entity]
+			fsm.RegisteredEntities[entity].Entities[entity] = true
 
 			fsm.ActiveEntities[entity] = nil
 			fsm.UpdateableEntities[entity] = nil
@@ -324,10 +337,14 @@ Fsm.ChangeState = function(fsm: FSM, entity: Entity, newState: State): nil
 		--# Yeet out entity from updateable table while changing state which
 		--# prevents un-expected behavior
 		fsm.UpdateableEntities[entity] = nil
+		fsm.RegisteredEntities[entity].Entities[entity] = nil
 		fsm.RegisteredEntities[entity].OnExit(entity, fsm)
+
 		fsm.RegisteredEntities[entity] = newState
-		fsm.RegisteredEntities[entity].OnEnter(entity, fsm)
+
 		fsm.UpdateableEntities[entity] = true --> make it updateable again
+		fsm.RegisteredEntities[entity].Entities[entity] = true
+		fsm.RegisteredEntities[entity].OnEnter(entity, fsm)
 
 		fsm.EntityChangedState:Fire(entity, newState, oldState)
 	else
@@ -357,6 +374,7 @@ State.new = function(constructArguments: {
 		OnEnter = constructArguments.OnEnter or function() end,
 		OnUpdate = constructArguments.OnUpdate or function() end,
 		OnExit = constructArguments.OnExit or function() end,
+		Entities = {},
 	} :: State
 
 	return self

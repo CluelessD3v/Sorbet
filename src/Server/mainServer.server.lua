@@ -38,7 +38,7 @@ local Wandering = Sorbet.State.new {
 		local z = math.sin(randAngle)
 
 		local myPos = entity:GetPivot().Position
-		local direction = Vector3.new(x, 0, z) * 15
+		local direction = Vector3.new(x, 0, z) * 25
 		local targetPos = (myPos + direction)
 		entity.Humanoid:MoveTo(targetPos)
 
@@ -65,15 +65,30 @@ RunService.Heartbeat:Connect(function()
 	Sorbet.Fsm.Update(npcStateMachine)
 end)
 
-local Part = workspace.NpcTest.Part
-local CD: ClickDetector = Part.ClickDetector
-local running = true
-CD.MouseClick:Connect(function()
-	running = not running
-	print(running)
-	if running then
+local ActivatorPart = workspace.NpcTest.Part
+local ClickDetector: ClickDetector = ActivatorPart.ClickDetector
+ClickDetector.MouseClick:Connect(function()
+	if npcStateMachine.IsRunning then
 		Sorbet.Fsm.PauseMachine(npcStateMachine)
 	else
 		Sorbet.Fsm.ResumeMachine(npcStateMachine)
+	end
+
+	print("Is on?", npcStateMachine.IsRunning)
+end)
+
+npcStateMachine.MachinePaused:Connect(function()
+	for entity in npcStateMachine.RegisteredStates.Idle.Entities do
+		idleTimeStamps[entity] = time()
+	end
+
+	for entity: any in npcStateMachine.RegisteredStates.Wandering.Entities do
+		entity.Humanoid:MoveTo(entity:GetPivot().Position)
+	end
+end)
+
+npcStateMachine.MachineResumed:Connect(function()
+	for entity: any in npcStateMachine.RegisteredStates.Wandering.Entities do
+		Wandering.OnEnter(entity, npcStateMachine)
 	end
 end)
