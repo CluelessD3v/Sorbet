@@ -30,8 +30,6 @@ export type FSM = {
 	MachinePaused: typeof(signal.new()),
 }
 
-type FSMClass = typeof(setmetatable({} :: FSM, {}))
-
 export type State = {
 	Name: string,
 	OnEnter: (entity: Entity, fsm: FSM) -> nil,
@@ -56,17 +54,6 @@ end
 -- !== ================================================================================||>
 -- !== Fsm namespace
 -- !== ================================================================================||>
-
---# "Trays" used so the state machine can "remember" entities state when calling
---# `Pause()`/`Resume()`. useful when i.e: an entity is inactive and you resume
---# the state machine, it will remain inactive.
-
-local stateMachineTrays = {} :: {
-	[FSM]: {
-		ActiveWhenPaused: { [Entity]: true },
-		InactiveWhenPaused: { [Entity]: true },
-	},
-}
 
 local Fsm = {}
 
