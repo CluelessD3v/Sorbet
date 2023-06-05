@@ -13,7 +13,7 @@ local idle = Sorbet.State.new {
 
 	OnUpdate = function(entity, fsm)
 		if time() - idleTimeStamps[entity] >= 5 then
-			Sorbet.FSM.ChangeState(fsm, entity, fsm.RegisteredStates.Wandering)
+			fsm:ChangeState(entity, fsm.RegisteredStates.Wandering)
 			return
 		end
 
@@ -43,7 +43,7 @@ local Wandering = Sorbet.State.new {
 		entity.Humanoid:MoveTo(targetPos)
 
 		wanderingCons[entity.Humanoid.MoveToFinished:Once(function()
-			Sorbet.FSM.ChangeState(fsm, entity, fsm.RegisteredStates.Idle)
+			fsm:ChangeState(entity, fsm.RegisteredStates.Idle)
 		end)] =
 			true
 	end,
@@ -58,11 +58,11 @@ local Wandering = Sorbet.State.new {
 local npcStateMachine = Sorbet.FSM.new(idle, { Wandering }, { workspace.NpcTest.Knight })
 
 for entity in npcStateMachine.RegisteredEntities do
-	Sorbet.FSM.ActivateEntity(npcStateMachine, entity)
+	npcStateMachine:ActivateEntity(entity)
 end
 
 RunService.Heartbeat:Connect(function()
-	Sorbet.FSM.Update(npcStateMachine)
+	npcStateMachine:Update()
 end)
 
 local ActivatorPart = workspace.NpcTest.Part

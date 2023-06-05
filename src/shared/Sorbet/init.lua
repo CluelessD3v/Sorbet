@@ -1,5 +1,6 @@
--- 04/06/23 (dd/mm/yy)
--- Version 0.1.0
+--//TODO: Fire Entity signals for every entity when machine specific methods are called
+--//TODO: Add InitialState param to ActivateMachine,
+--//TODO: Add InState param to ResumeMachine,
 
 --!strict
 local ReplicatedStorage = game:GetService "ReplicatedStorage"
@@ -10,36 +11,54 @@ local Signal = require(script.Signal)
 type Entity = any
 type StateName = string
 
+-- stylua: ignore start
 export type FSM = {
-	--* properties
-	IsRunning: boolean,
-	InitialState: State,
-	ActiveEntities: { [Entity]: true },
-	UpdateableEntities: { [Entity]: true },
+	--* properties`
+	IsRunning          : boolean,
+	InitialState       : State,
+	ActiveEntities     : { [Entity]: true },
+	UpdateableEntities : { [Entity]: true },
+	RegisteredEntities : { [Entity]: State },
+	RegisteredStates   : { [StateName]: State },
 
 	--* signals
-	RegisteredEntities: { [Entity]: State },
-	RegisteredStates: { [StateName]: State },
-	EntityActivated: typeof(signal.new()),
-	EntityDeactivated: typeof(signal.new()),
-	EntityResumed: typeof(signal.new()),
-	EntityPaused: typeof(signal.new()),
-	EntityRegistered: typeof(signal.new()),
-	EntityUnregistered: typeof(signal.new()),
-	EntityChangedState: typeof(signal.new()),
-	MachineActivated: typeof(signal.new()),
-	MachineDeactivated: typeof(signal.new()),
-	MachineResumed: typeof(signal.new()),
-	MachinePaused: typeof(signal.new()),
+	EntityActivated    : typeof(signal.new()),
+	EntityDeactivated  : typeof(signal.new()),
+	EntityResumed      : typeof(signal.new()),
+	EntityPaused       : typeof(signal.new()),
+	EntityRegistered   : typeof(signal.new()),
+	EntityUnregistered : typeof(signal.new()),
+	EntityChangedState : typeof(signal.new()),
+	
+	MachineActivated   : typeof(signal.new()),
+	MachineDeactivated : typeof(signal.new()),
+	MachineResumed     : typeof(signal.new()),
+	MachinePaused      : typeof(signal.new()),
+
+	--* Methods
+	RegisterEntity    : (self: FSM, entity: Entity, initialState: State) -> nil,
+	UnRegisterEntity  : (self: FSM, entity: Entity) -> nil,
+	ActivateEntity    : (self: FSM, entity: Entity, inState: State) -> nil,
+	DeactivateEntity  : (self: FSM, entity: Entity) -> nil,
+	ResumeEntity      : (self: FSM, entity: Entity, inState: State) -> nil,
+	PauseEntity       : (self: FSM, entity: Entity) -> nil,
+	
+	ActivateMachine   : (self: FSM) -> nil,
+	DeactivateMachine : (self: FSM) -> nil,
+	PauseMachine      : (self: FSM) -> nil,
+	ResumeMachine     : (self: FSM) -> nil,
+	Update            : (self: FSM, dt: number) -> nil,
+	ChangeState       : (self: FSM, entity: Entity, newState: State, ...any) -> nil,
 }
 
 export type State = {
 	Name: string,
-	OnEnter: (entity: Entity, fsm: FSM) -> nil,
-	OnUpdate: (entity: Entity, fsm: FSM, dt: number) -> nil,
-	OnExit: (entity: Entity, fsm: FSM) -> nil,
-	Entities: { [Entity]: true },
+	OnEnter  : (entity: Entity, fsm: FSM) -> nil,
+	OnUpdate : (entity: Entity, fsm: FSM, dt: number) -> nil,
+	OnExit   : (entity: Entity, fsm: FSM) -> nil,
+	Entities : { [Entity]: true },
 }
+-- stylua: ignore end
 
 --==/ Aux functions ===============================||>
 type Set = { [any]: any }
@@ -59,58 +78,6 @@ end
 -- !== ================================================================================||>
 
 local FSM = {}
-
-FSM.new = function(initialState: State, states: { State }, entities: { Entity }?): FSM
-	entities = entities or {}
-	assert(type(entities) == "table", "entities must be of type table!")
-	assert(type(states) == "table", "states must be of type table!")
-
-	local self = {} :: FSM
-
-	self.IsRunning = true
-	self.ActiveEntities = {}
-	self.UpdateableEntities = {}
-
-	self.RegisteredEntities = {}
-	self.RegisteredStates = {} :: { [StateName]: State }
-	self.InitialState = initialState
-
-	self.EntityActivated = signal.new()
-	self.EntityDeactivated = signal.new()
-	self.EntityResumed = signal.new()
-	self.EntityPaused = signal.new()
-	self.EntityRegistered = signal.new()
-	self.EntityUnregistered = signal.new()
-	self.EntityChangedState = signal.new()
-	self.MachineActivated = signal.new()
-	self.MachineDeactivated = signal.new()
-	self.MachineResumed = signal.new()
-	self.MachinePaused = signal.new()
-
-	--# Register entities & put them in the initial state
-	for _, entity in entities do
-		self.RegisteredEntities[entity] = initialState
-		initialState.Entities[entity] = true
-	end
-
-	--# Register all states
-	for _, state in states do
-		if self.RegisteredStates[state.Name] then
-			warn(state.Name, "found duplicate state")
-			continue
-		end
-
-		self.RegisteredStates[state.Name] = state
-	end
-
-	--# Register the initial state if the user forgot... Or simply could not be
-	--# bothered to include it in the list :>
-	if not self.RegisteredStates[initialState.Name] then
-		self.RegisteredStates[initialState.Name] = initialState
-	end
-
-	return self
-end
 
 --==/ Registering/Unregistering from FSM ===============================||>
 
@@ -193,6 +160,7 @@ FSM.DeactivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
 end
 
 --==/ Pause/Resume Entity ===============================||>
+
 FSM.PauseEntity = function(fsm: FSM, entity: Entity)
 	local entityState = fsm.RegisteredEntities[entity]
 	if entityState then
@@ -264,6 +232,7 @@ FSM.DeactivateMachine = function(fsm: FSM): nil
 end
 
 --==/ Pause/Resume State Machine ===============================||>
+
 FSM.PauseMachine = function(fsm: FSM)
 	if not fsm.IsRunning then
 		warn "The state machine is already NOT running"
@@ -295,6 +264,7 @@ FSM.ResumeMachine = function(fsm: FSM)
 end
 
 --==/ Change state & update entities ===============================||>
+
 FSM.Update = function(fsm: FSM, dt: number?): nil
 	for entity in fsm.UpdateableEntities do
 		--# avoid doing unnecessary iterations if paused
@@ -344,6 +314,76 @@ FSM.ChangeState = function(fsm: FSM, entity: Entity, newState: State): nil
 	return nil
 end
 
+--==/ Constructor ===============================||>
+--stylua: ignore start
+
+FSM.new = function(initialState: State, states: { State }, entities: { Entity }?): FSM
+	entities = entities or {}
+	assert(type(entities) == "table", "entities must be of type table!")
+	assert(type(states) == "table", "states must be of type table!")
+
+	local self = {
+		IsRunning          = true,
+		ActiveEntities     = {} :: { [Entity]: true },
+		UpdateableEntities = {},
+		RegisteredEntities = {},
+		RegisteredStates   = {} :: { [StateName]: State },
+		InitialState       = initialState,
+	
+		EntityActivated    = signal.new(),
+		EntityDeactivated  = signal.new(),
+		EntityResumed      = signal.new(),
+		EntityPaused       = signal.new(),
+		EntityRegistered   = signal.new(),
+		EntityUnregistered = signal.new(),
+		EntityChangedState = signal.new(),
+
+		MachineActivated   = signal.new(),
+		MachineDeactivated = signal.new(),
+		MachineResumed     = signal.new(),
+		MachinePaused      = signal.new(),
+
+		RegisterEntity     = FSM.RegisterEntity,
+		UnRegisterEntity   = FSM.UnregisterEntity,
+		ActivateEntity     = FSM.ActivateEntity,
+		DeactivateEntity   = FSM.DeactivateEntity,
+		ResumeEntity       = FSM.ResumeEntity,
+		PauseEntity        = FSM.PauseEntity,
+
+		ActivateMachine    = FSM.ActivateMachine,
+		DeactivateMachine  = FSM.DeactivateMachine,
+		ResumeMachine      = FSM.ResumeMachine,
+		PauseMachine       = FSM.PauseMachine,
+		Update             = FSM.Update,
+		ChangeState        = FSM.ChangeState,
+	} :: FSM
+
+	--# Register entities & put them in the initial state
+	for _, entity in entities do
+		self.RegisteredEntities[entity] = initialState
+		initialState.Entities[entity] = true
+	end
+
+	--# Register all states
+	for _, state in states do
+		if self.RegisteredStates[state.Name] then
+			warn(state.Name, "found duplicate state")
+			continue
+		end
+
+		self.RegisteredStates[state.Name] = state
+	end
+
+	--# Register the initial state if the user forgot... Or simply could not be
+	--# bothered to include it in the list :>
+	if not self.RegisteredStates[initialState.Name] then
+		self.RegisteredStates[initialState.Name] = initialState
+	end
+
+	return self
+end
+--stylua: ignore end
+
 -- !== ================================================================================||>
 -- !== State namespace
 -- !== ================================================================================||>
@@ -351,27 +391,27 @@ type Callback = (entity: Entity, fsm: FSM) -> nil
 type Update = (entity: Entity, fsm: FSM, dt: number) -> nil
 
 local State = {}
+--stylua: ignore start
 State.new = function(constructArguments: {
-	Name: string,
-	OnEnter: Callback?,
-	OnUpdate: Update?,
-	OnExit: Callback?,
+	Name     : string,
+	OnEnter  : Callback?,
+	OnUpdate : Update?,
+	OnExit   : Callback?,
 }): State
-	assert(
-		constructArguments.Name ~= nil and type(constructArguments.Name) == "string",
-		"You must give the state a name!"
-	)
+
+	assert(constructArguments.Name ~= nil and type(constructArguments.Name) == "string", "You must give the state a name!")
 
 	local self = {
-		Name = constructArguments.Name,
-		OnEnter = constructArguments.OnEnter or function() end,
+		Name     = constructArguments.Name,
+		OnEnter  = constructArguments.OnEnter or function() end,
 		OnUpdate = constructArguments.OnUpdate or function() end,
-		OnExit = constructArguments.OnExit or function() end,
+		OnExit   = constructArguments.OnExit or function() end,
 		Entities = {},
 	} :: State
 
 	return self
 end
+--stylua: ignore end
 
 return {
 	FSM = FSM,
