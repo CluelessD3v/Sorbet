@@ -1,6 +1,7 @@
 --//TODO: Fire Entity signals for every entity when machine specific methods are called
 --//TODO: Add InitialState param to ActivateMachine,
 --//TODO: Add InState param to ResumeMachine,
+--//TODO: Add InState param to ResumeMachine,
 
 --!strict
 local ReplicatedStorage = game:GetService "ReplicatedStorage"
@@ -77,11 +78,11 @@ end
 -- !== Fsm namespace
 -- !== ================================================================================||>
 
-local FSM = {}
+local Sorbet = {}
 
 --==/ Registering/Unregistering from FSM ===============================||>
 
-FSM.RegisterEntity = function(fsm: FSM, entity: Entity, initialState: State?): nil
+Sorbet.RegisterEntity = function(fsm: FSM, entity: Entity, initialState: State?): nil
 	if fsm.RegisteredEntities[entity] then
 		warn(entity, "is already registered in the state machine")
 	else
@@ -91,7 +92,7 @@ FSM.RegisterEntity = function(fsm: FSM, entity: Entity, initialState: State?): n
 	return nil
 end
 
-FSM.UnregisterEntity = function(fsm: FSM, entity: Entity): nil
+Sorbet.UnregisterEntity = function(fsm: FSM, entity: Entity): nil
 	--# Yeet the entity from the state machine entirely
 	fsm.UpdateableEntities[entity] = nil
 	fsm.RegisteredEntities[entity].Entities[entity] = nil
@@ -102,7 +103,7 @@ end
 
 --==/ Activate/Deactivate Entity ===============================||>
 
-FSM.ActivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
+Sorbet.ActivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
 	local entityState = fsm.RegisteredEntities[entity]
 	local entityIsActive = fsm.ActiveEntities[entity]
 
@@ -131,7 +132,7 @@ FSM.ActivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
 	return nil
 end
 
-FSM.DeactivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
+Sorbet.DeactivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
 	local entityState = fsm.RegisteredEntities[entity]
 	local entityIsActive = fsm.ActiveEntities[entity]
 	if entityState then
@@ -161,7 +162,7 @@ end
 
 --==/ Pause/Resume Entity ===============================||>
 
-FSM.PauseEntity = function(fsm: FSM, entity: Entity)
+Sorbet.PauseEntity = function(fsm: FSM, entity: Entity)
 	local entityState = fsm.RegisteredEntities[entity]
 	if entityState then
 		fsm.ActiveEntities[entity] = nil
@@ -175,7 +176,7 @@ FSM.PauseEntity = function(fsm: FSM, entity: Entity)
 	return nil
 end
 
-FSM.ResumeEntity = function(fsm: FSM, entity: Entity)
+Sorbet.ResumeEntity = function(fsm: FSM, entity: Entity)
 	local entityState = fsm.RegisteredEntities[entity]
 	if entityState then
 		fsm.ActiveEntities[entity] = true
@@ -191,14 +192,14 @@ end
 
 --==/ Activate/Deactivate State Machine ===============================||>
 
-FSM.ActivateMachine = function(fsm: FSM): nil
+Sorbet.ActivateMachine = function(fsm: FSM): nil
 	if fsm.IsRunning then
 		warn "The state machine is already running"
 		return
 	end
 
 	for entity in fsm.RegisteredEntities do
-		FSM.ActivateEntity(fsm, entity) --> activate will make them active
+		Sorbet.ActivateEntity(fsm, entity) --> activate will make them active
 	end
 
 	fsm.IsRunning = true
@@ -206,7 +207,7 @@ FSM.ActivateMachine = function(fsm: FSM): nil
 	return nil
 end
 
-FSM.DeactivateMachine = function(fsm: FSM): nil
+Sorbet.DeactivateMachine = function(fsm: FSM): nil
 	if not fsm.IsRunning then
 		warn "The state machine is already NOT running"
 		return
@@ -233,7 +234,7 @@ end
 
 --==/ Pause/Resume State Machine ===============================||>
 
-FSM.PauseMachine = function(fsm: FSM)
+Sorbet.PauseMachine = function(fsm: FSM)
 	if not fsm.IsRunning then
 		warn "The state machine is already NOT running"
 		return
@@ -253,7 +254,7 @@ FSM.PauseMachine = function(fsm: FSM)
 	fsm.MachinePaused:Fire()
 end
 
-FSM.ResumeMachine = function(fsm: FSM)
+Sorbet.ResumeMachine = function(fsm: FSM)
 	--# insert active entities to updateable before allowing the machine to run
 	for entity in fsm.ActiveEntities do
 		fsm.UpdateableEntities[entity] = true
@@ -265,7 +266,7 @@ end
 
 --==/ Change state & update entities ===============================||>
 
-FSM.Update = function(fsm: FSM, dt: number?): nil
+Sorbet.Update = function(fsm: FSM, dt: number?): nil
 	for entity in fsm.UpdateableEntities do
 		--# avoid doing unnecessary iterations if paused
 		if fsm.IsRunning then
@@ -278,7 +279,7 @@ FSM.Update = function(fsm: FSM, dt: number?): nil
 	return nil
 end
 
-FSM.ChangeState = function(fsm: FSM, entity: Entity, newState: State): nil
+Sorbet.ChangeState = function(fsm: FSM, entity: Entity, newState: State): nil
 	if not fsm.IsRunning then
 		return nil
 	end
@@ -314,10 +315,10 @@ FSM.ChangeState = function(fsm: FSM, entity: Entity, newState: State): nil
 	return nil
 end
 
---==/ Constructor ===============================||>
+--==/ FSM Constructor ===============================||>
 --stylua: ignore start
 
-FSM.new = function(initialState: State, states: { State }, entities: { Entity }?): FSM
+Sorbet.FSM = function(initialState: State, states: { State }, entities: { Entity }?): FSM
 	entities = entities or {}
 	assert(type(entities) == "table", "entities must be of type table!")
 	assert(type(states) == "table", "states must be of type table!")
@@ -343,19 +344,19 @@ FSM.new = function(initialState: State, states: { State }, entities: { Entity }?
 		MachineResumed     = signal.new(),
 		MachinePaused      = signal.new(),
 
-		RegisterEntity     = FSM.RegisterEntity,
-		UnRegisterEntity   = FSM.UnregisterEntity,
-		ActivateEntity     = FSM.ActivateEntity,
-		DeactivateEntity   = FSM.DeactivateEntity,
-		ResumeEntity       = FSM.ResumeEntity,
-		PauseEntity        = FSM.PauseEntity,
+		RegisterEntity     = Sorbet.RegisterEntity,
+		UnRegisterEntity   = Sorbet.UnregisterEntity,
+		ActivateEntity     = Sorbet.ActivateEntity,
+		DeactivateEntity   = Sorbet.DeactivateEntity,
+		ResumeEntity       = Sorbet.ResumeEntity,
+		PauseEntity        = Sorbet.PauseEntity,
 
-		ActivateMachine    = FSM.ActivateMachine,
-		DeactivateMachine  = FSM.DeactivateMachine,
-		ResumeMachine      = FSM.ResumeMachine,
-		PauseMachine       = FSM.PauseMachine,
-		Update             = FSM.Update,
-		ChangeState        = FSM.ChangeState,
+		ActivateMachine    = Sorbet.ActivateMachine,
+		DeactivateMachine  = Sorbet.DeactivateMachine,
+		ResumeMachine      = Sorbet.ResumeMachine,
+		PauseMachine       = Sorbet.PauseMachine,
+		Update             = Sorbet.Update,
+		ChangeState        = Sorbet.ChangeState,
 	} :: FSM
 
 	--# Register entities & put them in the initial state
@@ -384,15 +385,12 @@ FSM.new = function(initialState: State, states: { State }, entities: { Entity }?
 end
 --stylua: ignore end
 
--- !== ================================================================================||>
--- !== State namespace
--- !== ================================================================================||>
+--==/ State Constructor ===============================||>
 type Callback = (entity: Entity, fsm: FSM) -> nil
 type Update = (entity: Entity, fsm: FSM, dt: number) -> nil
 
-local State = {}
 --stylua: ignore start
-State.new = function(constructArguments: {
+Sorbet.State = function(constructArguments: {
 	Name     : string,
 	OnEnter  : Callback?,
 	OnUpdate : Update?,
@@ -413,7 +411,4 @@ State.new = function(constructArguments: {
 end
 --stylua: ignore end
 
-return {
-	FSM = FSM,
-	State = State,
-}
+return Sorbet

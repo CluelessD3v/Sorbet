@@ -3,7 +3,7 @@ local Sorbet = require(game.ReplicatedStorage.Sorbet)
 
 local idleTimeStamps = {}
 local idleConns = {}
-local idle = Sorbet.State.new {
+local idle = Sorbet.State {
 	Name = "Idle",
 
 	OnEnter = function(entity)
@@ -29,7 +29,7 @@ local idle = Sorbet.State.new {
 }
 
 local wanderingCons = {}
-local Wandering = Sorbet.State.new {
+local Wandering = Sorbet.State {
 	Name = "Wandering",
 	OnEnter = function(entity: Model & { Humanoid: Humanoid }, fsm)
 		print "Wandering"
@@ -55,7 +55,7 @@ local Wandering = Sorbet.State.new {
 	end,
 }
 
-local npcStateMachine = Sorbet.FSM.new(idle, { Wandering }, { workspace.NpcTest.Knight })
+local npcStateMachine = Sorbet.FSM(idle, { Wandering }, { workspace.NpcTest.Knight })
 
 for entity in npcStateMachine.RegisteredEntities do
 	npcStateMachine:ActivateEntity(entity)
@@ -69,9 +69,9 @@ local ActivatorPart = workspace.NpcTest.Part
 local ClickDetector: ClickDetector = ActivatorPart.ClickDetector
 ClickDetector.MouseClick:Connect(function()
 	if npcStateMachine.IsRunning then
-		Sorbet.FSM.PauseMachine(npcStateMachine)
+		npcStateMachine:PauseMachine()
 	else
-		Sorbet.FSM.ResumeMachine(npcStateMachine)
+		npcStateMachine:ResumeMachine()
 	end
 
 	print("Is on?", npcStateMachine.IsRunning)
