@@ -1,3 +1,6 @@
+-- 04/06/23 (dd/mm/yy)
+-- Version 0.1.0
+
 --!strict
 local ReplicatedStorage = game:GetService "ReplicatedStorage"
 local Packages = game.ReplicatedStorage.Packages
@@ -55,9 +58,9 @@ end
 -- !== Fsm namespace
 -- !== ================================================================================||>
 
-local Fsm = {}
+local FSM = {}
 
-Fsm.new = function(initialState: State, states: { State }, entities: { Entity }?): FSM
+FSM.new = function(initialState: State, states: { State }, entities: { Entity }?): FSM
 	entities = entities or {}
 	assert(type(entities) == "table", "entities must be of type table!")
 	assert(type(states) == "table", "states must be of type table!")
@@ -111,7 +114,7 @@ end
 
 --==/ Registering/Unregistering from FSM ===============================||>
 
-Fsm.RegisterEntity = function(fsm: FSM, entity: Entity, initialState: State?): nil
+FSM.RegisterEntity = function(fsm: FSM, entity: Entity, initialState: State?): nil
 	if fsm.RegisteredEntities[entity] then
 		warn(entity, "is already registered in the state machine")
 	else
@@ -121,7 +124,7 @@ Fsm.RegisterEntity = function(fsm: FSM, entity: Entity, initialState: State?): n
 	return nil
 end
 
-Fsm.UnregisterEntity = function(fsm: FSM, entity: Entity): nil
+FSM.UnregisterEntity = function(fsm: FSM, entity: Entity): nil
 	--# Yeet the entity from the state machine entirely
 	fsm.UpdateableEntities[entity] = nil
 	fsm.RegisteredEntities[entity].Entities[entity] = nil
@@ -132,7 +135,7 @@ end
 
 --==/ Activate/Deactivate Entity ===============================||>
 
-Fsm.ActivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
+FSM.ActivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
 	local entityState = fsm.RegisteredEntities[entity]
 	local entityIsActive = fsm.ActiveEntities[entity]
 
@@ -161,7 +164,7 @@ Fsm.ActivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
 	return nil
 end
 
-Fsm.DeactivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
+FSM.DeactivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
 	local entityState = fsm.RegisteredEntities[entity]
 	local entityIsActive = fsm.ActiveEntities[entity]
 	if entityState then
@@ -190,7 +193,7 @@ Fsm.DeactivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
 end
 
 --==/ Pause/Resume Entity ===============================||>
-Fsm.PauseEntity = function(fsm: FSM, entity: Entity)
+FSM.PauseEntity = function(fsm: FSM, entity: Entity)
 	local entityState = fsm.RegisteredEntities[entity]
 	if entityState then
 		fsm.ActiveEntities[entity] = nil
@@ -204,7 +207,7 @@ Fsm.PauseEntity = function(fsm: FSM, entity: Entity)
 	return nil
 end
 
-Fsm.ResumeEntity = function(fsm: FSM, entity: Entity)
+FSM.ResumeEntity = function(fsm: FSM, entity: Entity)
 	local entityState = fsm.RegisteredEntities[entity]
 	if entityState then
 		fsm.ActiveEntities[entity] = true
@@ -220,14 +223,14 @@ end
 
 --==/ Activate/Deactivate State Machine ===============================||>
 
-Fsm.ActivateMachine = function(fsm: FSM): nil
+FSM.ActivateMachine = function(fsm: FSM): nil
 	if fsm.IsRunning then
 		warn "The state machine is already running"
 		return
 	end
 
 	for entity in fsm.RegisteredEntities do
-		Fsm.ActivateEntity(fsm, entity) --> activate will make them active
+		FSM.ActivateEntity(fsm, entity) --> activate will make them active
 	end
 
 	fsm.IsRunning = true
@@ -235,7 +238,7 @@ Fsm.ActivateMachine = function(fsm: FSM): nil
 	return nil
 end
 
-Fsm.DeactivateMachine = function(fsm: FSM): nil
+FSM.DeactivateMachine = function(fsm: FSM): nil
 	if not fsm.IsRunning then
 		warn "The state machine is already NOT running"
 		return
@@ -261,7 +264,7 @@ Fsm.DeactivateMachine = function(fsm: FSM): nil
 end
 
 --==/ Pause/Resume State Machine ===============================||>
-Fsm.PauseMachine = function(fsm: FSM)
+FSM.PauseMachine = function(fsm: FSM)
 	if not fsm.IsRunning then
 		warn "The state machine is already NOT running"
 		return
@@ -281,7 +284,7 @@ Fsm.PauseMachine = function(fsm: FSM)
 	fsm.MachinePaused:Fire()
 end
 
-Fsm.ResumeMachine = function(fsm: FSM)
+FSM.ResumeMachine = function(fsm: FSM)
 	--# insert active entities to updateable before allowing the machine to run
 	for entity in fsm.ActiveEntities do
 		fsm.UpdateableEntities[entity] = true
@@ -292,7 +295,7 @@ Fsm.ResumeMachine = function(fsm: FSM)
 end
 
 --==/ Change state & update entities ===============================||>
-Fsm.Update = function(fsm: FSM, dt: number?): nil
+FSM.Update = function(fsm: FSM, dt: number?): nil
 	for entity in fsm.UpdateableEntities do
 		--# avoid doing unnecessary iterations if paused
 		if fsm.IsRunning then
@@ -305,7 +308,7 @@ Fsm.Update = function(fsm: FSM, dt: number?): nil
 	return nil
 end
 
-Fsm.ChangeState = function(fsm: FSM, entity: Entity, newState: State): nil
+FSM.ChangeState = function(fsm: FSM, entity: Entity, newState: State): nil
 	if not fsm.IsRunning then
 		return nil
 	end
@@ -354,7 +357,10 @@ State.new = function(constructArguments: {
 	OnUpdate: Update?,
 	OnExit: Callback?,
 }): State
-	assert(constructArguments.Name ~= nil, "You must give the state a name!")
+	assert(
+		constructArguments.Name ~= nil and type(constructArguments.Name) == "string",
+		"You must give the state a name!"
+	)
 
 	local self = {
 		Name = constructArguments.Name,
@@ -368,6 +374,6 @@ State.new = function(constructArguments: {
 end
 
 return {
-	Fsm = Fsm,
+	FSM = FSM,
 	State = State,
 }

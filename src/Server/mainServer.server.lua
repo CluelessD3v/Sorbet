@@ -13,7 +13,7 @@ local idle = Sorbet.State.new {
 
 	OnUpdate = function(entity, fsm)
 		if time() - idleTimeStamps[entity] >= 5 then
-			Sorbet.Fsm.ChangeState(fsm, entity, fsm.RegisteredStates.Wandering)
+			Sorbet.FSM.ChangeState(fsm, entity, fsm.RegisteredStates.Wandering)
 			return
 		end
 
@@ -43,7 +43,7 @@ local Wandering = Sorbet.State.new {
 		entity.Humanoid:MoveTo(targetPos)
 
 		wanderingCons[entity.Humanoid.MoveToFinished:Once(function()
-			Sorbet.Fsm.ChangeState(fsm, entity, fsm.RegisteredStates.Idle)
+			Sorbet.FSM.ChangeState(fsm, entity, fsm.RegisteredStates.Idle)
 		end)] =
 			true
 	end,
@@ -55,23 +55,23 @@ local Wandering = Sorbet.State.new {
 	end,
 }
 
-local npcStateMachine = Sorbet.Fsm.new(idle, { Wandering }, { workspace.NpcTest.Knight })
+local npcStateMachine = Sorbet.FSM.new(idle, { Wandering }, { workspace.NpcTest.Knight })
 
 for entity in npcStateMachine.RegisteredEntities do
-	Sorbet.Fsm.ActivateEntity(npcStateMachine, entity)
+	Sorbet.FSM.ActivateEntity(npcStateMachine, entity)
 end
 
 RunService.Heartbeat:Connect(function()
-	Sorbet.Fsm.Update(npcStateMachine)
+	Sorbet.FSM.Update(npcStateMachine)
 end)
 
 local ActivatorPart = workspace.NpcTest.Part
 local ClickDetector: ClickDetector = ActivatorPart.ClickDetector
 ClickDetector.MouseClick:Connect(function()
 	if npcStateMachine.IsRunning then
-		Sorbet.Fsm.PauseMachine(npcStateMachine)
+		Sorbet.FSM.PauseMachine(npcStateMachine)
 	else
-		Sorbet.Fsm.ResumeMachine(npcStateMachine)
+		Sorbet.FSM.ResumeMachine(npcStateMachine)
 	end
 
 	print("Is on?", npcStateMachine.IsRunning)
