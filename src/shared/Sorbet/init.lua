@@ -148,11 +148,11 @@ FSM.ActivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
 			--# State Entities collection prevents an if statement mess, so just
 			--# remove from state and insert to new one regardless if it changed.
 			fsm.RegisteredEntities[entity].Entities[entity] = nil
-			entityState = if inState then inState else fsm.RegisteredEntities[entity]
+			fsm.RegisteredEntities[entity] = if inState then inState else fsm.RegisteredEntities[entity]
 			fsm.RegisteredEntities[entity].Entities[entity] = true
 
 			fsm.ActiveEntities[entity] = true
-			entityState.OnEnter(entity, fsm)
+			fsm.RegisteredEntities[entity].OnEnter(entity, fsm)
 			fsm.UpdateableEntities[entity] = true
 
 			fsm.EntityActivated:Fire(entity)
@@ -176,12 +176,12 @@ FSM.DeactivateEntity = function(fsm: FSM, entity: Entity, inState: State?): nil
 			--# State Entities collection prevents an if statement mess, so just
 			--# remove from state and insert to new one regardless if it changed.
 			fsm.RegisteredEntities[entity].Entities[entity] = nil
-			entityState = if inState then inState else fsm.RegisteredEntities[entity]
+			fsm.RegisteredEntities[entity] = if inState then inState else fsm.RegisteredEntities[entity]
 			fsm.RegisteredEntities[entity].Entities[entity] = true
 
 			fsm.ActiveEntities[entity] = nil
 			fsm.UpdateableEntities[entity] = nil
-			entityState.OnExit(entity, fsm)
+			fsm.RegisteredEntities[entity].OnExit(entity, fsm)
 
 			fsm.EntityDeactivated:Fire(entity)
 		end
