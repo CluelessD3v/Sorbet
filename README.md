@@ -1,7 +1,7 @@
 
 
 <div align="center">
-    <img src="brand/Sorbet.png" />
+    <img src="Brand/Sorbet.png" />
 </div>
 
 
