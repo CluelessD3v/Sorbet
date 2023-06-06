@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkdocs=self.webpackChunkdocs||[]).push([[730],{63891:s=>{s.exports=JSON.parse('{"sourceUrl":"https://github.com/CluelessD3v/Status/blob/master","baseUrl":"/Status/","classOrder":[],"apiCategories":[]}')}}]);
