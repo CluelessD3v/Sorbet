@@ -2,11 +2,11 @@
 --//TODO: Add InitialState param to ActivateMachine,
 --//TODO: Add InState param to ResumeMachine,
 --//TODO: Add InState param to ResumeMachine,
+--//TODO: Sort the signal dependency elephant in the room...
 
 --!strict
 local ReplicatedStorage = game:GetService "ReplicatedStorage"
 local Packages = game.ReplicatedStorage.Packages
-local signal = require(ReplicatedStorage.Packages.signal)
 local Signal = require(script.Signal)
 
 type Entity = any
@@ -23,18 +23,18 @@ export type FSM = {
 	RegisteredStates   : { [StateName]: State },
 
 	--* signals
-	EntityActivated    : typeof(signal.new()),
-	EntityDeactivated  : typeof(signal.new()),
-	EntityResumed      : typeof(signal.new()),
-	EntityPaused       : typeof(signal.new()),
-	EntityRegistered   : typeof(signal.new()),
-	EntityUnregistered : typeof(signal.new()),
-	EntityChangedState : typeof(signal.new()),
+	EntityActivated    : typeof(Signal.new()),
+	EntityDeactivated  : typeof(Signal.new()),
+	EntityResumed      : typeof(Signal.new()),
+	EntityPaused       : typeof(Signal.new()),
+	EntityRegistered   : typeof(Signal.new()),
+	EntityUnregistered : typeof(Signal.new()),
+	EntityChangedState : typeof(Signal.new()),
 	
-	MachineActivated   : typeof(signal.new()),
-	MachineDeactivated : typeof(signal.new()),
-	MachineResumed     : typeof(signal.new()),
-	MachinePaused      : typeof(signal.new()),
+	MachineActivated   : typeof(Signal.new()),
+	MachineDeactivated : typeof(Signal.new()),
+	MachineResumed     : typeof(Signal.new()),
+	MachinePaused      : typeof(Signal.new()),
 
 	--* Methods
 	RegisterEntity    : (self: FSM, entity: Entity, initialState: State) -> nil,
@@ -331,19 +331,20 @@ Sorbet.FSM = function(initialState: State, states: { State }, entities: { Entity
 		RegisteredStates   = {} :: { [StateName]: State },
 		InitialState       = initialState,
 	
-		EntityActivated    = signal.new(),
-		EntityDeactivated  = signal.new(),
-		EntityResumed      = signal.new(),
-		EntityPaused       = signal.new(),
-		EntityRegistered   = signal.new(),
-		EntityUnregistered = signal.new(),
-		EntityChangedState = signal.new(),
+		EntityActivated    = Signal.new(),
+		EntityDeactivated  = Signal.new(),
+		EntityResumed      = Signal.new(),
+		EntityPaused       = Signal.new(),
+		EntityRegistered   = Signal.new(),
+		EntityUnregistered = Signal.new(),
+		EntityChangedState = Signal.new(),
 
-		MachineActivated   = signal.new(),
-		MachineDeactivated = signal.new(),
-		MachineResumed     = signal.new(),
-		MachinePaused      = signal.new(),
+		MachineActivated   = Signal.new(),
+		MachineDeactivated = Signal.new(),
+		MachineResumed     = Signal.new(),
+		MachinePaused      = Signal.new(),
 
+		--# No reason to use a metatable, so refs it is
 		RegisterEntity     = Sorbet.RegisterEntity,
 		UnRegisterEntity   = Sorbet.UnregisterEntity,
 		ActivateEntity     = Sorbet.ActivateEntity,
