@@ -484,6 +484,11 @@ Sorbet.ChangeState = function(stateMachine: StateMachine, entity: Entity, newSta
 		end
 
 		local oldState = stateMachine.RegisteredEntities[entity]
+
+		--# Fire the event BEFORE the state transition happens! the new state
+		--# OnEnter & OnExit could recursively call ChangeState() as soon as it
+		--# Enters/Exits the state WHICH IS FINE! But obv. prevents the rest of
+		--# the code chunk from running, so this guarantees the signal firing
 		stateMachine.EntityChangedState:Fire(entity, newState, oldState)
 
 		--# In case the entity is not active, just make it active right away.
