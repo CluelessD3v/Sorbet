@@ -2,7 +2,12 @@
 --//TODO: Add InitialState param to ActivateMachine,
 --//TODO: Add InState param to ResumeMachine,
 --//TODO: Add InState param to ResumeMachine,
+--//TODO: Make it so if state `name` parameter is not passed it uses the table hash as key
 --//TODO: Sort the signal dependency elephant in the room...
+--//TODO: pass state the entity was in when it's unregistered/de-activated to events
+--//TODO: add method GetEntitiesInState
+--//TODO: Fix EntityPaused/Resume events firing continiously even tho the entity is either resumed or paused.
+--//TODO: On ChangeState() Make sure the entity is registered in the state machine
 
 --!strict
 --[=[
@@ -48,9 +53,6 @@ type Dictionary<T> = { [string]: T }
 
 	:::
 ]=]
-
-
-
 
 
 --[=[
@@ -207,6 +209,8 @@ Sorbet.UnregisterEntity = function(stateMachine: StateMachine, entity: Entity): 
 	stateMachine.RegisteredEntities[entity].Entities[entity] = nil
 	stateMachine.ActiveEntities[entity] = nil
 	stateMachine.RegisteredEntities[entity] = nil
+
+	stateMachine.EntityUnregistered:Fire(entity)
 	return nil
 end
 
@@ -480,6 +484,7 @@ Sorbet.ChangeState = function(stateMachine: StateMachine, entity: Entity, newSta
 		end
 
 		local oldState = stateMachine.RegisteredEntities[entity]
+		stateMachine.EntityChangedState:Fire(entity, newState, oldState)
 
 		--# In case the entity is not active, just make it active right away.
 		stateMachine.ActiveEntities[entity] = true
@@ -495,8 +500,6 @@ Sorbet.ChangeState = function(stateMachine: StateMachine, entity: Entity, newSta
 		stateMachine.UpdateableEntities[entity] = true --> make it updateable again
 		stateMachine.RegisteredEntities[entity].Entities[entity] = true
 		stateMachine.RegisteredEntities[entity].OnEnter(entity, stateMachine)
-
-		stateMachine.EntityChangedState:Fire(entity, newState, oldState)
 	else
 		warn(entity, "cannot change state, new state is nil!")
 	end
