@@ -25,6 +25,11 @@
       "$properties": {
         "FilteringEnabled": true
       },
+
+      "Assets":{
+        "$path":"Assets/Workspace"
+      },
+
       "Baseplate": {
         "$className": "Part",
         "$properties": {
