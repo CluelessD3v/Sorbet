@@ -206,7 +206,11 @@ export type FSM = {
 	Stop            : (self: FSM) -> (),
 	ChangeState     : (self: FSM, entity: Entity, toState: State|string?) -> (),
 	Update          : (self: FSM, dt: number) -> (),
-	GetCurrentState : (self:FSM, entity: Entity) -> State?
+	GetCurrentState : (self:FSM, entity: Entity) -> State?,
+	GetStates       : (self: FSM) -> State,
+	IsRegistered    : (self: FSM, entity: Entity) -> boolean,
+	IsActive        : (self: FSM, entity: Entity) -> boolean,
+	
 }
 
 
@@ -321,9 +325,28 @@ function Sorbet.Update(self: FSM, dt)
 	end
 end
 
+
+--==/ Getters/ bool expressions ===============================||>
 function Sorbet.GetCurrentState(self: FSM, entity: Entity)
 	local thisPrivData = privateData[self]
-	return thisPrivData.EntitiesToState[entity].Name
+	return thisPrivData.EntitiesToState[entity]
 end
+
+function Sorbet.GetStates(self: FSM)
+	local thisPrivData = privateData[self]
+	return thisPrivData.States
+end
+
+
+function Sorbet.IsRegistered(self: FSM, entity: Entity)
+	local thisPrivData = privateData[self]
+	return if thisPrivData.EntitiesToState[entity] then true else false
+end
+
+function Sorbet.IsActive(self: FSM, entity: Entity)
+	local thisPrivData = privateData[self]
+	return if thisPrivData.ActiveEntities[entity] then true else false
+end
+
 
 return Sorbet

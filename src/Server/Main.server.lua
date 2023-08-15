@@ -52,11 +52,7 @@ local Roaming = Sorbet.State({
 
 		fsm:RemoveEntity(entity)
 	end
-
 })
-
-
-
 
 local CollectionService = game:GetService("CollectionService")
 local knights = CollectionService:GetTagged("Knight")
@@ -70,3 +66,5 @@ movementFsm:Start()
 RunService.PostSimulation:Connect(function()
 	movementFsm:Update()
 end)
+
+print(movementFsm:IsActive(knights[1]), movementFsm:IsActive(workspace))
