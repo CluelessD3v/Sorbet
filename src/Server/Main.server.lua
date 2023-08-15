@@ -5,8 +5,8 @@ local idleTimestampts = {}
 local idleTime = 3
 local Idle = Sorbet.State({
 	Name = "Idle",
-	Enter = function(entity, fsm)
-		print("entered")
+	Enter = function(entity: any, fsm, this)
+		print(this.Name)
 		idleTimestampts[entity] = os.clock()
 	end,
 
@@ -22,7 +22,7 @@ local Idle = Sorbet.State({
 	end
 })
 
-local roamingDistance = 10
+local roamingDistance = 25
 local conns = {}
 local Roaming = Sorbet.State({
 	Name = "Roaming",
@@ -34,20 +34,23 @@ local Roaming = Sorbet.State({
 			local y = Humanoid.HipHeight
 			local z = math.sin(randAngle) 
 			Humanoid:MoveTo(entity:GetPivot().Position + Vector3.new(x,y,z)  * roamingDistance)
-
-			conns.MoveTo = Humanoid.MoveToFinished:Once(function()
-				print"reached destination"
+			
+			conns[entity] = {}
+			conns[entity].MoveTo = Humanoid.MoveToFinished:Once(function()
+				print(entity.Name, "reached destination")
 				fsm:ChangeState(entity, "Idle")
 			end)
 
-			print("roaming")
 		end
 	end,
 
-	Exit = function(entity)
-		for _, conn in conns do
+	Exit = function(entity, fsm)
+		local myConns = conns[entity]
+		for _, conn in myConns do
 			conn:Disconnect()
 		end
+
+		fsm:RemoveEntity(entity)
 	end
 
 })
