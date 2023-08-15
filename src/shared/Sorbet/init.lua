@@ -6,7 +6,7 @@
 
 local ReplicatedStorage = game:GetService "ReplicatedStorage"
 local Packages          = ReplicatedStorage.Packages
-local Sigal             = require(Packages.signal)
+local Signal             = require(Packages.signal)
 
 -- !== ================================================================================||>
 -- !== Type Definitions
@@ -50,7 +50,7 @@ export type FSM = {
 	Started       : Signal,
 	EntityStarted : Signal,
 	EntityStopped : Signal,
-	ChangedState  : Signal,
+	StateChanged  : Signal,
 	EntityAdded   : Signal,
 	EntityRemoved : Signal,
 	StateAdded    : Signal,
@@ -100,7 +100,10 @@ local function GetSetDifference(a, b)
 	return difference
 end
 
-local function GetRegisteredState(privData: PrivData, stateToGet: State| string| nil): State| nil
+--# it's not bool function so user can pass the name of a state (a string) 
+--#	and still get a state, also makes sure the asked state is actually registered
+
+local function ResolveState(privData: PrivData, stateToGet: State| string| nil): State| nil
 	if stateToGet == nil then
 		return nil
 	end
@@ -124,6 +127,15 @@ local function nop() end
 -- !== ================================================================================||>
 local Sorbet = {}
 Sorbet.__index = Sorbet
+Sorbet.Stopped       = Signal.new()
+Sorbet.Started       = Signal.new()
+Sorbet.EntityStarted = Signal.new()
+Sorbet.EntityStopped = Signal.new()
+Sorbet.StateChanged  = Signal.new()
+Sorbet.EntityAdded   = Signal.new()
+Sorbet.EntityRemoved = Signal.new()
+Sorbet.StateAdded    = Signal.new()
+Sorbet.StateRemoved  = Signal.new()
 
 local privateData = {} :: { [FSM]: PrivData }
 
@@ -175,20 +187,20 @@ function Sorbet.FSM(creationInfo: CreationInfo?): FSM
 		states[state.Name] = state
 	end
 	
-	
-	self.InitialState = initialState
 	privateData[self] = {
 		EntitiesToState = entitiesToState,
 		ActiveEntities  = activeEntities,
 		States          = states
 	}
 
+	--# Def public fields
+	self.InitialState = initialState
 	return self
 end
 
 --# Simple name/id for unnamed states, shoudn't be an issue lol 
 local stateCount = 0
-function Sorbet.State(stateInfo: StateInfo?, fsm: FSM?)
+function Sorbet.State(stateInfo: StateInfo?)
 	local info = stateInfo or {}
 	stateCount += 1
 	local self = {
@@ -196,33 +208,40 @@ function Sorbet.State(stateInfo: StateInfo?, fsm: FSM?)
 		Enter       = info.Enter or nop,
 		Exit        = info.Exit or nop,
 		Update      = info.Update or nop,
-		Entered     = Sigal.new(),
-		Exited      = Sigal.new(),
+		Entered     = Signal.new(),
+		Exited      = Signal.new(),
 		Connections = {},
-		_isState = true,
+		_isState = true, 
 	}
 
 	self.Connections.Entered = self.Entered:Connect(self.Enter)
 	self.Connections.Exited  = self.Exited:Connect(self.Exit)
-
-	if fsm and  privateData[fsm] then
-		 privateData[fsm].States[self] = true
-	end
-
 	return self
 end
 
 
 --==/ Add/Remove ===============================||>
 function Sorbet.AddEntity(self: FSM, entity: Entity, initialState: State)
-	local thisPrivData = privateData[self]
-	thisPrivData.EntitiesToState[entity] = if type(initialState) == "table" and initialState._isState then initialState else self.InitialState
+	if entity == nil then return end
+
+	local thisPrivData    = privateData[self]
+	local entitiesToState = thisPrivData.EntitiesToState
+	local isRegistered    = entitiesToState[entity]
+	initialState = if type(initialState) == "table" and initialState._isState then initialState else self.InitialState
+
+	if not isRegistered then
+		entitiesToState[entity] = initialState	
+	end
+
+	thisPrivData.EntitiesToState[entity] = initialState
+	self.EntityAdded:Fire(entity, initialState)
 end
 
 function Sorbet.RemoveEntity(self: FSM, entity: Entity)
 	local thisPrivData = privateData[self]
 	thisPrivData.ActiveEntities[entity] = nil
 	thisPrivData.EntitiesToState[entity] = nil
+	self.EntityRemoved:Fire(entity)
 end
 
 --==/ Start/Stop entity ===============================||>
@@ -230,12 +249,11 @@ end
 
 function Sorbet.StartEntity(self: FSM, entity, startInState: State? | string?)
 	local thisPrivData = privateData[self]
-	local registeredStartState = GetRegisteredState(thisPrivData, startInState) 
-	
+
+	--# if startInState was passed, make sure it's valid	
 	if startInState then
-		if registeredStartState then --# make sure the state is actually registered in the fsm
-			startInState = registeredStartState
-		else 
+		startInState  = ResolveState(thisPrivData, startInState) 
+		if startInState == nil then 
 			warn(startInState, "has not been added into the state machine")
 			return
 		end
@@ -247,6 +265,7 @@ function Sorbet.StartEntity(self: FSM, entity, startInState: State? | string?)
 		thisPrivData.EntitiesToState[entity] = currentState	--# overwrites the state if startInState was passed	
 		thisPrivData.ActiveEntities[entity] = true
 		currentState.Entered:Fire(entity, self, currentState)
+		self.EntityStarted:Fire(entity)
 	else
 		warn(entity, "has not been added to the state machine")
 	end
@@ -260,10 +279,10 @@ function Sorbet.StopEntity(self: FSM, entity: Entity)
 
 	if currentState then
 		local isEntityActive = activeEntities[entity] 
-		print(isEntityActive)
 		if isEntityActive == true then
 			activeEntities[entity] = nil
 			currentState.Exited:Fire(entity, self, currentState)
+			self.EntityStopped:Fire(entity)
 			return
 		else
 			warn(entity, "is already inactive")
@@ -280,6 +299,8 @@ function Sorbet.Start(self: FSM, startInState: State?|string?)
 	for entity in inactiveEntities do
 		Sorbet.StartEntity(self, entity, startInState)
 	end
+	
+	self.Started:Fire()
 end
 
 function Sorbet.Stop(self: FSM)
@@ -287,6 +308,8 @@ function Sorbet.Stop(self: FSM)
 	for entity in thisPrivData.ActiveEntities do
 		Sorbet.StopEntity(self, entity)
 	end
+
+	self.Stopped:Fire()
 end
 
 --==/ transforms ===============================||>
@@ -296,18 +319,20 @@ function Sorbet.ChangeState(self: FSM, entity: Entity, newState: State | string?
 	local currentState = thisPrivData.EntitiesToState[entity]
 
 	if currentState then
-		--# validate next state and or get state object from the given name
-		newState = GetRegisteredState(thisPrivData, newState) 
+		newState = ResolveState(thisPrivData, newState) 
+
 		if newState then
 			currentState.Exited:Fire(entity, self, currentState)
 			local entityIsActive = activeEntities[entity]
 			
 			--# prevents Entered from firing if the entity was removed
 			if not entityIsActive then return end
-			
+
+			local oldstate = currentState
 			currentState = newState
 			currentState.Entered:Fire(entity, self, currentState)
 			thisPrivData.EntitiesToState[entity] = currentState
+			self.StateChanged:Fire(entity, newState, oldstate)
 		else
 			warn("Can't change state to!", newState)
 		end
