@@ -15,7 +15,6 @@ type StateCallback  = (entity: Entity, FSM: FSM, thisState: State) -> ()
 type UpdateCallback = (entity: Entity, FSM: FSM, thisState: State, dt: number) -> ()
 type Set            = { [any]: any }
 
-export type Entity = any
 type StateInfo = {
 	Name   : string?,
 	Enter  : StateCallback?,
@@ -24,17 +23,6 @@ type StateInfo = {
 }
 
 type Signal = typeof(Sigal.new())
-export type State = {
-	Name        : string,
-	Enter       : StateCallback,
-	Update      : UpdateCallback,
-	Exit        : StateCallback,
-	Entered     : Signal,
-	Exited      : Signal,
-	Connections : { Entered: Signal, Exited: Signal },
-	_isState    : boolean, --> Guetto type checking lol.
-}
-
 type CreationInfo = {
 	Entities      : { Entity }?,
 	States       : { State }?,
@@ -46,6 +34,45 @@ type PrivData = {
 	ActiveEntities  : { [Entity]: true },
 	States          : { [string]: State },
 }
+export type State = {
+	Name        : string,
+	Enter       : StateCallback,
+	Update      : UpdateCallback,
+	Exit        : StateCallback,
+	Entered     : Signal,
+	Exited      : Signal,
+	Connections : { Entered: Signal, Exited: Signal },
+	_isState    : boolean, --> Guetto type checking lol.
+}
+export type FSM = {
+	InitialState: State,
+	Stopped       : Signal,
+	Started       : Signal,
+	EntityStarted : Signal,
+	EntityStopped : Signal,
+	ChangedState  : Signal,
+	EntityAdded   : Signal,
+	EntityRemoved : Signal,
+	StateAdded    : Signal,
+	StateRemoved  : Signal,
+
+	AddEntity       : (self: FSM, entity: Entity, inState: State?|string?) -> (),
+	RemoveEntity    : (self: FSM, entity: Entity) -> (),
+	StartEntity     : (self: FSM, entity: Entity, inState: State?|string?) -> (),
+	StopEntity      : (self: FSM, entity: Entity) -> (),
+	Start           : (self: FSM, inState: State?|string?) -> (),
+	Stop            : (self: FSM) -> (),
+	ChangeState     : (self: FSM, entity: Entity, toState: State|string?) -> (),
+	Update          : (self: FSM, dt: number) -> (),
+	GetCurrentState : (self:FSM, entity: Entity) -> State?,
+	GetStates       : (self: FSM) -> State,
+	IsRegistered    : (self: FSM, entity: Entity) -> boolean,
+	IsActive        : (self: FSM, entity: Entity) -> boolean,
+	
+}
+
+export type Entity = any
+
 
 -- !== ================================================================================||>
 -- !== Aux functions
@@ -147,8 +174,8 @@ function Sorbet.FSM(creationInfo: CreationInfo?): FSM
 	for _, state in passedStates do
 		states[state.Name] = state
 	end
-
-
+	
+	
 	self.InitialState = initialState
 	privateData[self] = {
 		EntitiesToState = entitiesToState,
@@ -184,34 +211,6 @@ function Sorbet.State(stateInfo: StateInfo?, fsm: FSM?)
 
 	return self
 end
-
---# cause metatables... *gasp*
-export type FSM = {
-	InitialState: State,
-	Stopped       : Signal,
-	Started       : Signal,
-	EntityStarted : Signal,
-	EntityStopped : Signal,
-	ChangedState  : Signal,
-	EntityAdded   : Signal,
-	EntityRemoved : Signal,
-	StateAdded    : Signal,
-	StateRemoved  : Signal,
-
-	AddEntity       : (self: FSM, entity: Entity, inState: State?|string?) -> (),
-	RemoveEntity    : (self: FSM, entity: Entity) -> (),
-	StartEntity     : (self: FSM, entity: Entity, inState: State?|string?) -> (),
-	StopEntity      : (self: FSM, entity: Entity) -> (),
-	Start           : (self: FSM, inState: State?|string?) -> (),
-	Stop            : (self: FSM) -> (),
-	ChangeState     : (self: FSM, entity: Entity, toState: State|string?) -> (),
-	Update          : (self: FSM, dt: number) -> (),
-	GetCurrentState : (self:FSM, entity: Entity) -> State?,
-	GetStates       : (self: FSM) -> State,
-	IsRegistered    : (self: FSM, entity: Entity) -> boolean,
-	IsActive        : (self: FSM, entity: Entity) -> boolean,
-	
-}
 
 
 --==/ Add/Remove ===============================||>
