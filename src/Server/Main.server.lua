@@ -15,18 +15,22 @@ local Idle = Sorbet.State({
 		if (os.clock() - ts) >= idleTime then
 			fsm:ChangeState(entity, "Roaming")
 		end
+
 	end,
 
 	Exit = function(entity)
 		idleTimestampts[entity] = os.clock()
-	end
+	end,
+
 })
 
 local roamingDistance = 25
 local conns = {}
 local Roaming = Sorbet.State({
+	roamingDistance = 10,
+
 	Name = "Roaming",
-	Enter = function(entity: Model, fsm)
+	Enter = function(entity: Model, fsm, thisState)
 		local Humanoid = entity:FindFirstChild("Humanoid"):: Humanoid
 		if Humanoid then
 			local randAngle = math.pi * 2 * math.random()
@@ -35,7 +39,7 @@ local Roaming = Sorbet.State({
 			local z = math.sin(randAngle) 
 			Humanoid:MoveTo(entity:GetPivot().Position + Vector3.new(x,y,z)  * roamingDistance)
 			
-			conns[entity] = {}
+			conns[entity] = {} 
 			conns[entity].MoveTo = Humanoid.MoveToFinished:Once(function()
 				print(entity.Name, "reached destination")
 				fsm:ChangeState(entity, "Idle")
@@ -49,8 +53,6 @@ local Roaming = Sorbet.State({
 		for _, conn in myConns do
 			conn:Disconnect()
 		end
-
-		fsm:RemoveEntity(entity)
 	end
 })
 
@@ -62,15 +64,16 @@ local movementFsm = Sorbet.FSM({
 	States = {Idle, Roaming}
 })
 
-movementFsm.Started:Connect(function(entity, new, old)
-	print(entity, "added")
+
+movementFsm.EntityStarted:Connect(function(entity, new, old)
+	print(entity, "started")
 end)
 
 
 for _, k in knights do
 	movementFsm:AddEntity(k)
 end
-movementFsm:Stop()
+-- movementFsm:Stop()
 movementFsm:Start()
 
 RunService.PostSimulation:Connect(function()
