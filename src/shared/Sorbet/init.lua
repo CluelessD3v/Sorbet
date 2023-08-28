@@ -280,7 +280,6 @@ function Sorbet.StartEntity(self: FSM, entity, startInState: State | string?)
 	
 	if entityState then
 		local activeEntities = thisPrivData.ActiveEntities
-		print(entityState.Name)
 		entityState              = startInState or entityState
 		entitiesStateMap[entity] = entityState
 		activeEntities[entity]   = true
