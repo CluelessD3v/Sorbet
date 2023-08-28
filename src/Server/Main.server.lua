@@ -15,7 +15,6 @@ local Idle = Sorbet.State({
 		if (os.clock() - ts) >= idleTime then
 			fsm:ChangeState(entity, "Roaming")
 		end
-
 	end,
 
 	Exit = function(entity)
@@ -61,8 +60,9 @@ local knights = CollectionService:GetTagged("Knight")
 
 
 local movementFsm = Sorbet.FSM({
-	States = {Idle, Roaming}
+	States = {}
 })
+
 
 
 movementFsm.EntityStarted:Connect(function(entity, new, old)
