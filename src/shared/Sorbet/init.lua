@@ -25,6 +25,9 @@ type PrivData = {
 	EntitiesStateMap: { [Entity]: State },
 	ActiveEntities  : { [Entity]: true },
 	States          : { [State]: true },
+	Entities        : {[Entity]: true},
+	InitialState    : State,
+	Activated       : boolean,
 }
 export type State = {
 	Name       : string,
@@ -33,12 +36,9 @@ export type State = {
 	Exit       : StateCallback,
 	Entered    : Signal,
 	Exited     : Signal,
-	Connections: { Entered: Signal, Exited: Signal },
-	_isState   : boolean, --> Guetto type checking lol.
 }
+
 export type FSM = {
-	InitialState   : State,
-	Activated      : boolean,
 	Stopped        : Signal,
 	Started        : Signal,
 	EntityStarted  : Signal,
@@ -48,23 +48,6 @@ export type FSM = {
 	EntityRemoved  : Signal,
 	StateAdded     : Signal,
 	StateRemoved   : Signal,
-	
-	AddState       : (self: FSM, state: State) -> (),
-	RemoveState    : (self: FSM, state: State) -> (),
-	AddEntity      : (self: FSM, entity: Entity, inState: State?|string?) -> (),
-	RemoveEntity   : (self: FSM, entity: Entity) -> (),
-	StartEntity    : (self: FSM, entity: Entity, inState: State?|string?) -> (),
-	StopEntity     : (self: FSM, entity: Entity) -> (),
-	Start          : (self: FSM, inState: State?|string?) -> (),
-	Stop           : (self: FSM) -> (),
-
-	ChangeState    : (self: FSM, entity: Entity, toState: State|string?) -> (),
-	Update         : (self: FSM, dt: number) -> (),
-
-	GetCurrentState: (self:FSM, entity: Entity) -> State?,
-	GetStates      : (self: FSM) -> State,
-	IsRegistered   : (self: FSM, entity: Entity) -> boolean,
-	IsActive       : (self: FSM, entity: Entity) -> boolean,
 }
 
 export type Entity = any
@@ -110,32 +93,20 @@ local function nop() end
 -- !== Sorbet
 -- !== ================================================================================||>
 local Sorbet = {}
-Sorbet.__index = Sorbet
+Sorbet.__index =  Sorbet
 
-Sorbet.Stopped       = Signal.new()
-Sorbet.Started       = Signal.new()
-Sorbet.EntityStarted = Signal.new()
-Sorbet.EntityStopped = Signal.new()
-Sorbet.StateChanged  = Signal.new()
-Sorbet.EntityAdded   = Signal.new()
-Sorbet.EntityRemoved = Signal.new()
-Sorbet.StateAdded    = Signal.new()
-Sorbet.StateRemoved  = Signal.new()
-
-local privateData = {} :: { [FSM]: PrivData }
-
-
-local init = {} 
-init.__index = init
+local fsmData    = {} :: { [FSM]: PrivData }
+local statesData = {} :: {[State]: {Entered: Signal, Exited: Signal }} -- cheeky way to store both all created states and their connections
+local stateCount = 0 --# Simple name/id for unnamed states, shoudn't be an issue lol 
 
 --==/ Constructors ===============================||>
 
-function Sorbet.FSM(creationArguments: {
+function Sorbet.Machine(creationArguments: {
 		Entities      : { Entity }?,
 		States       : { State }?,
 		InitialState : State?,
-	}?): FSM
-	local self = setmetatable({}, Sorbet)
+	}?)
+	local self = {}
 
 	--# smoll Validation pass, make sure these are actually tables
 	local args           = creationArguments or {} --> so the type checker is hapi ;-;
@@ -143,7 +114,7 @@ function Sorbet.FSM(creationArguments: {
 	local passedStates   = type(args.States)  == "table" and args.States or {} 
 
 	for _, state: State in passedStates do
-		if not state._isState then
+		if not statesData[state] then
 			error("States table have non state objects!")
 		end
 	end
@@ -186,21 +157,30 @@ function Sorbet.FSM(creationArguments: {
 	end
 	
 	
-	privateData[self] = {
+	fsmData[self] = {
+		Activated        = true,
 		EntitiesStateMap = entitiesStateMap,
-		ActiveEntities  = activeEntities,
-		States          = states,
+		ActiveEntities   = activeEntities,
+		States           = states,
+		Entities         = passedEntities,
+		InitialState     = initialState,
 	}
 
 	--# Def public fields
-	self.InitialState = initialState
-	self.Activated    = true
+	self.Stopped       = Signal.new()
+	self.Started       = Signal.new()
+	self.EntityStarted = Signal.new()
+	self.EntityStopped = Signal.new()
+	self.StateChanged  = Signal.new()
+	self.EntityAdded   = Signal.new()
+	self.EntityRemoved = Signal.new()
+	self.StateAdded    = Signal.new()
+	self.StateRemoved  = Signal.new()
 
-	return self
+	return setmetatable(self, Sorbet)
 end
 
---# Simple name/id for unnamed states, shoudn't be an issue lol 
-local stateCount = 0
+
 function Sorbet.State(stateInfo: StateInfo?)
 	local info = stateInfo or {}
 	stateCount += 1
@@ -211,22 +191,25 @@ function Sorbet.State(stateInfo: StateInfo?)
 		Update      = info.Update or nop,
 		Entered     = Signal.new(),
 		Exited      = Signal.new(),
-		Connections = {},
-		_isState    = true,
 	}
 
-	self.Connections.Entered = self.Entered:Connect(self.Enter)
-	self.Connections.Exited  = self.Exited:Connect(self.Exit)
+	statesData[self] = {
+		Entered = self.Entered:Connect(self.Enter),
+		Exited  = self.Exited:Connect(self.Exit)
+	}
+
+
 	return self
 end
 
 
+
 --==/ Add/Remove State ===============================||>
 function Sorbet.AddState(self: FSM, state: State)
-	local thisPrivData = privateData[self]
+	local thisPrivData = fsmData[self]
 	local states = thisPrivData.States 
 	
-	if not thisPrivData.States[state] and state._isState then
+	if not thisPrivData.States[state] and states[state] then
 		states[state] = state
 	else 
 		error(tostring(state).. "is not a state!")
@@ -235,9 +218,9 @@ end
 
 
 function Sorbet.RemoveState(self: FSM, state: State|string?)
-	local thisPrivData = privateData[self]
+	local thisPrivData = fsmData[self]
 	if ResolveState(thisPrivData, state) then
-		if self.InitialState == state then
+		if thisPrivData.InitialState == state then
 			error("You're attempting to remove the initial state!")
 		end
 		thisPrivData.States[state] = nil
@@ -247,19 +230,22 @@ end
 --==/ Add/Remove Entity ===============================||>
 function Sorbet.AddEntity(self: FSM, entity: Entity, initialState: State | string?)
 	if entity == nil then return end
-	local thisPrivData     = privateData[self]
-	local EntitiesStateMap = thisPrivData.EntitiesStateMap
+	local thisPrivData     = fsmData[self]
+	local entitiesStateMap = thisPrivData.EntitiesStateMap
+	local entities         = thisPrivData.Entities
 
 	initialState             = ResolveState(thisPrivData, initialState)
-	EntitiesStateMap[entity] = initialState or self.InitialState
+	entitiesStateMap[entity] = initialState or thisPrivData.InitialState
+	entities[entity]         = true
 	
 	self.EntityAdded:Fire(entity, initialState)
 end
 
 function Sorbet.RemoveEntity(self: FSM, entity: Entity)
-	local thisPrivData = privateData[self]
+	local thisPrivData = fsmData[self]
 	thisPrivData.ActiveEntities[entity]   = nil
 	thisPrivData.EntitiesStateMap[entity] = nil
+	thisPrivData.Entities[entity]         = nil
 	self.EntityRemoved:Fire(entity)
 end
 
@@ -267,9 +253,10 @@ end
 -- more efficient if you only have a single entity in the state machine.
 
 function Sorbet.StartEntity(self: FSM, entity, startInState: State | string?)
-	if not self.Activated then return end
-
-	local thisPrivData = privateData[self]
+	local thisPrivData = fsmData[self]
+	if not thisPrivData.Activated then return end
+	
+	
 	local entitiesStateMap = thisPrivData.EntitiesStateMap
 	local entityState = entitiesStateMap[entity]
 	startInState = ResolveState(thisPrivData, startInState) --# Validate startInState
@@ -289,7 +276,7 @@ end
 	
 
 function Sorbet.StopEntity(self: FSM, entity: Entity)
-	local thisPrivData   = privateData[self]
+	local thisPrivData   = fsmData[self]
 	local entityState    = thisPrivData.EntitiesStateMap[entity]
 	local activeEntities = thisPrivData.ActiveEntities
 
@@ -311,9 +298,8 @@ end
 
 --==/ Start/Stop machine ===============================||>
 function Sorbet.Start(self: FSM, startInState: State | string?)
-	if not self.Activated then return end
-
-	local thisPrivData = privateData[self]
+	local thisPrivData = fsmData[self]
+	if not thisPrivData.Activated then return end
 
 	-- get all entities that are not active 
 	local inactiveEntities = GetSetDifference(thisPrivData.EntitiesStateMap, thisPrivData.ActiveEntities)
@@ -321,12 +307,11 @@ function Sorbet.Start(self: FSM, startInState: State | string?)
 		Sorbet.StartEntity(self, entity, startInState)
 	end
 
-
 	self.Started:Fire()
 end
 
 function Sorbet.Stop(self: FSM)
-	local thisPrivData = privateData[self]
+	local thisPrivData = fsmData[self]
 	for entity in thisPrivData.ActiveEntities do
 		Sorbet.StopEntity(self, entity)
 	end
@@ -336,8 +321,8 @@ end
 
 --==/ transforms ===============================||>
 function Sorbet.ChangeState(self: FSM, entity: Entity, newState: State | string?)
-	if not self.Activated then return end
-	local thisPrivData   = privateData[self]
+	local thisPrivData   = fsmData[self]
+	if not thisPrivData.Activated then return end
 	local activeEntities = thisPrivData.ActiveEntities
 	local entitiesStates = thisPrivData.EntitiesStateMap
 	local entityState    = entitiesStates[entity]
@@ -350,7 +335,7 @@ function Sorbet.ChangeState(self: FSM, entity: Entity, newState: State | string?
 			entityState.Exited:Fire(entity, self, entityState)
 			--# prevents Entered from firing if the entity was removed 
 			--# or the FSM was de-activated
-			if not activeEntities[entity] or not self.Activated then return end
+			if not activeEntities[entity] or not thisPrivData.Activated then return end
 
 			oldState    = entityState
 			entityState = newState
@@ -366,9 +351,9 @@ function Sorbet.ChangeState(self: FSM, entity: Entity, newState: State | string?
 end
 
 function Sorbet.Update(self: FSM, dt)
-	local thisPrivData = privateData[self]
+	local thisPrivData = fsmData[self]
 	for entity in thisPrivData.ActiveEntities do	
-		if not self.Activated then break end
+		if not thisPrivData.Activated then break end
 		local currentState = thisPrivData.EntitiesStateMap[entity] 
 		currentState.Update(entity, self, currentState,  dt)
 	end
@@ -377,30 +362,31 @@ end
 
 --==/ Getters/ bool expressions ===============================||>
 function Sorbet.GetCurrentState(self: FSM, entity: Entity)
-	local thisPrivData = privateData[self]
+	local thisPrivData = fsmData[self]
 	return thisPrivData.EntitiesStateMap[entity]
 end
 
 function Sorbet.GetStates(self: FSM)
-	local states = {}
-	local thisPrivData = privateData[self]
+	local thisPrivData = fsmData[self]
+	return thisPrivData.States
+end
 
-	for state in thisPrivData do
-		table.insert(states, state)
-	end
+function Sorbet.GetEntities(self: FSM)
+	return fsmData[self].Entities
+end
 
-	return states
+function Sorbet.GetActiveEntities(self: FSM)
+	return fsmData[self].ActiveEntities
 end
 
 function Sorbet.IsRegistered(self: FSM, entity: Entity)
-	local thisPrivData = privateData[self]
+	local thisPrivData = fsmData[self]
 	return if thisPrivData.EntitiesStateMap[entity] then true else false
 end
 
 function Sorbet.IsActive(self: FSM, entity: Entity)
-	local thisPrivData = privateData[self]
+	local thisPrivData = fsmData[self]
 	return if thisPrivData.ActiveEntities[entity] then true else false
 end
-
 
 return Sorbet
