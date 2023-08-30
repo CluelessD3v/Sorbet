@@ -3,10 +3,7 @@
 	if ChangeState(newState) called newState.Enter() and Enter() is recursive, everything
 	poops itself, so it's safer to use events.
 ]]--
-
-local ReplicatedStorage = game:GetService "ReplicatedStorage"
-local Packages          = ReplicatedStorage.Packages
-local Signal            = require(Packages.signal)
+local Signal = require(script.Signal)
 
 -- !== ================================================================================||>
 -- !== Type Definitions
