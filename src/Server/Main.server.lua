@@ -63,9 +63,6 @@ local movementFsm = Sorbet.Machine({
 	States = {}
 }):: Sorbet.FSM
 
-
-print(movementFsm)
-
 movementFsm.EntityStarted:Connect(function(entity, new, old)
 	print(entity, "started")
 end)

@@ -38,20 +38,7 @@ export type State = {
 	Exited     : Signal,
 }
 
-export type FSM = {
-	Stopped        : Signal,
-	Started        : Signal,
-	EntityStarted  : Signal,
-	EntityStopped  : Signal,
-	StateChanged   : Signal,
-	EntityAdded    : Signal,
-	EntityRemoved  : Signal,
-	StateAdded     : Signal,
-	StateRemoved   : Signal,
-}
-
 export type Entity = any
-
 
 -- !== ================================================================================||>
 -- !== Aux functions
@@ -202,6 +189,7 @@ function Sorbet.State(stateInfo: StateInfo?)
 	return self
 end
 
+export type FSM = typeof(Sorbet.Machine({Entities = {}, States = {}, InitialState = Sorbet.State()}))
 
 
 --==/ Add/Remove State ===============================||>
