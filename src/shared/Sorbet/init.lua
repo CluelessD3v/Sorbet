@@ -320,7 +320,7 @@ function Sorbet.Stop(self: FSM)
 end
 
 --==/ transforms ===============================||>
-function Sorbet.ChangeState(self: FSM, entity: Entity, newState: State | string?)
+function Sorbet.ChangeStateAsync(self: FSM, entity: Entity, newState: State | string?)
 	local thisPrivData   = fsmData[self]
 	if not thisPrivData.Activated then return end
 	local activeEntities = thisPrivData.ActiveEntities
@@ -341,6 +341,36 @@ function Sorbet.ChangeState(self: FSM, entity: Entity, newState: State | string?
 			entityState = newState
 			
 			entityState.Entered:Fire(entity, self, entityState)
+			thisPrivData.EntitiesStateMap[entity] = entityState
+
+			self.StateChanged:Fire(entity, newState, oldState)
+		end
+	else
+		error(tostring(entity).. "Has not been added to the state machine!")
+	end
+end
+
+function Sorbet.ChangeState(self: FSM, entity: Entity, newState: State | string?)
+	local thisPrivData   = fsmData[self]
+	if not thisPrivData.Activated then return end
+	local activeEntities = thisPrivData.ActiveEntities
+	local entitiesStates = thisPrivData.EntitiesStateMap
+	local entityState    = entitiesStates[entity]
+
+	if entityState then
+		newState = ResolveState(thisPrivData, newState) 
+		if newState then
+			local oldState = entityState
+
+			entityState.Exit(entity, self, entityState)
+			--# prevents Entered from firing if the entity was removed 
+			--# or the FSM was de-activated
+			if not activeEntities[entity] or not thisPrivData.Activated then return end
+
+			oldState    = entityState
+			entityState = newState
+			
+			entityState.Enter(entity, self, entityState)
 			thisPrivData.EntitiesStateMap[entity] = entityState
 
 			self.StateChanged:Fire(entity, newState, oldState)
