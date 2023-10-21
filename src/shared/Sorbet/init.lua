@@ -103,14 +103,15 @@ function Sorbet.State(stateInfo: StateInfo?)
 		Exited      = Signal.new(),
 	}
 
+	--# Private events used to change state asyncronously, given that events run
+	--# in their own thread, if any of the callbacks are recursives it won't halt
+	--# the fsm execution. Also has the potential to be very efficient cause it's 
+	--# 2 threads per state instead of one thread for every single entity
 	statesData[self] = {
 		Entered = self.Entered:Connect(self.Enter),
 		Exited  = self.Exited:Connect(self.Exit)
 	}
 	
-	
-
-
 	return self
 end
 
@@ -190,6 +191,7 @@ end
 export type FSM = typeof(Sorbet.Machine({},{}, Sorbet.State()))
 
 --==/ Setters ===============================||>
+--# sets the default initial state of the state machine
 function Sorbet.SetInitialState(self: FSM, state: State|string?)
 	local thisPrivData = fsmData[self]
 	local resolvedState = ResolveState(thisPrivData, state)
@@ -200,6 +202,7 @@ function Sorbet.SetInitialState(self: FSM, state: State|string?)
 	end
 end
 
+--# sets the state of the fsm, playing/paused.
 function Sorbet.SetMachineActiveState(self: FSM, isActivated: boolean)
 	local thisPrivData = fsmData[self]
 	assert(type(isActivated) == "boolean", "Bad argument, expected boolean ")
@@ -208,6 +211,7 @@ end
 
 
 --==/ Add/Remove State ===============================||>
+--//XXX these still feel adhoc... revise these
 function Sorbet.AddState(self: FSM, state: State, asInitial: boolean?)
 	local thisPrivData = fsmData[self]
 	local states = thisPrivData.States
@@ -235,6 +239,12 @@ function Sorbet.RemoveState(self: FSM, state: State|string?)
 end
 
 --==/ Add/Remove Entity ===============================||>
+--# Note that these methods do not start/stop the entity, it just registers/unregisters
+--# them from the fsm.
+
+
+--# Adds an entity to the machine and optionally set it's initial state so it can
+--# at any state the user needs to, else it'll use the machine's default initial state 
 function Sorbet.AddEntity(self: FSM, entity: Entity, initialState: State | string?)
 	if entity == nil then return end
 	local thisPrivData     = fsmData[self]
@@ -248,6 +258,8 @@ function Sorbet.AddEntity(self: FSM, entity: Entity, initialState: State | strin
 	self.EntityAdded:Fire(entity, initialState)
 end
 
+
+--# Removes the entity from the state machine entirely
 function Sorbet.RemoveEntity(self: FSM, entity: Entity)
 	local thisPrivData = fsmData[self]
 	thisPrivData.ActiveEntities[entity]   = nil
@@ -257,7 +269,7 @@ function Sorbet.RemoveEntity(self: FSM, entity: Entity)
 end
 
 --==/ Start/Stop entity ===============================||>
--- more efficient if you only have a single entity in the state machine.
+-- more efficient start/stops if you only have a single entity in the state machine.
 
 function Sorbet.StartEntity(self: FSM, entity, startInState: State | string?)
 	local thisPrivData = fsmData[self]
@@ -307,6 +319,8 @@ function Sorbet.StopEntity(self: FSM, entity: Entity)
 end
 
 --==/ Start/Stop machine ===============================||>
+--# Starts/Resumes the state machine, calling all entities current state Enter
+--# callback
 function Sorbet.Start(self: FSM, startInState: State | string?)
 	local thisPrivData = fsmData[self]
 	if not thisPrivData.Activated then return end
@@ -320,6 +334,7 @@ function Sorbet.Start(self: FSM, startInState: State | string?)
 	self.Started:Fire()
 end
 
+--# Stops/Pauses the state machine calling all entities Exit callback
 function Sorbet.Stop(self: FSM)
 	local thisPrivData = fsmData[self]
 	for entity in thisPrivData.ActiveEntities do
@@ -399,6 +414,7 @@ function Sorbet.ChangeState(self: FSM, entity: Entity, newState: State | string?
 	end
 end
 
+--# Calls all entities current state Update callback if the machine is active.
 function Sorbet.Update(self: FSM, dt)
 	local thisPrivData = fsmData[self]
 	for entity in thisPrivData.ActiveEntities do	
@@ -411,7 +427,7 @@ end
 
 --==/ Getters/ bool expressions ===============================||>
 --! Warning, don't modify any of these returned tables, it will cause serious bugs.
---! Also these getters suck... Should rethink better ones
+--//XXX these getters suck... Should rethink better ones
 function Sorbet.GetCurrentState(self: FSM, entity: Entity)
 	local thisPrivData = fsmData[self]
 	return thisPrivData.EntitiesStateMap[entity]
