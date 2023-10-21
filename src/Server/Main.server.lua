@@ -59,9 +59,7 @@ local CollectionService = game:GetService("CollectionService")
 local knights = CollectionService:GetTagged("Knight")
 
 
-local movementFsm = Sorbet.Machine({
-	States = {}
-}):: Sorbet.FSM
+local movementFsm = Sorbet.Machine({}, {Idle, Roaming}, Idle)
 
 movementFsm.EntityStarted:Connect(function(entity, new, old)
 	print(entity, "started")

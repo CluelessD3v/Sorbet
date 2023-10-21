@@ -3,7 +3,7 @@
 	if ChangeState(newState) called newState.Enter() and Enter() is recursive, everything
 	poops itself, so it's safer to use events.
 ]]--
-local Signal = require(script.Signal)
+local Signal = require(script.Parent.Signal)
 
 -- !== ================================================================================||>
 -- !== Type Definitions
@@ -86,23 +86,43 @@ local fsmData    = {} :: { [FSM]: PrivData }
 local statesData = {} :: {[State]: {Entered: Signal, Exited: Signal }} -- cheeky way to store both all created states and their connections
 local stateCount = 0 --# Simple name/id for unnamed states, shoudn't be an issue lol 
 
+local entityNotAddedMsg = "Has not been added to the state machine! Remember to add the entity into the FSM first through FSM:AddEntity() if it was not added at construction"
+local stateNotAddedMsg  = "Has not been added to the state machine! Remember to add the state into the FSM first through FSM:State() if it was not added at construction"
+local isNotAStateMsg    = "Is not a state! States can only be created through the State constructor Sorbet.State()"
+
 --==/ Constructors ===============================||>
+function Sorbet.State(stateInfo: StateInfo?)
+	local info = stateInfo or {}
+	stateCount += 1
+	local self = {
+		Name        = info.Name or tostring(stateCount),
+		Enter       = info.Enter or nop,
+		Exit        = info.Exit or nop,
+		Update      = info.Update or nop,
+		Entered     = Signal.new(),
+		Exited      = Signal.new(),
+	}
 
-function Sorbet.Machine(creationArguments: {
-		Entities      : { Entity }?,
-		States       : { State }?,
-		InitialState : State?,
-	}?)
+	statesData[self] = {
+		Entered = self.Entered:Connect(self.Enter),
+		Exited  = self.Exited:Connect(self.Exit)
+	}
+	
+	
+
+
+	return self
+end
+
+
+function Sorbet.Machine(entities : { Entity }, states : { State }, initialState : State?)
 	local self = {}
+	assert(type(entities) == "table", "Bad argument #1, expected table") 
+	assert(type(states) == "table", "Bad argument #2, expected table")
 
-	--# smoll Validation pass, make sure these are actually tables
-	local args           = creationArguments or {} --> so the type checker is hapi ;-;
-	local passedEntities = type(args.Entities) == "table" and args.Entities or {}
-	local passedStates   = type(args.States)  == "table" and args.States or {} 
-
-	for _, state: State in passedStates do
+	for _, state: State in states do
 		if not statesData[state] then
-			error("States table have non state objects!")
+			error(tostring(state).."is not a state object! States can only be constructed using Sorbet's State constructor Sorbet.State(StateInfoTable)")
 		end
 	end
 
@@ -114,17 +134,14 @@ function Sorbet.Machine(creationArguments: {
 		C. create a new empty state, casue there's no init state nor passed states
 	]]
 
-	local initialState
 
-	if type(args.InitialState)  == "table" then
-		if args.InitialState._isState then
-			initialState = args.InitialState
-		else
-			error("Passed Initial state is not a state!")
+	if type(initialState)  == "table" then
+		if not statesData[initialState] then
+			error(tostring(initialState).." "..isNotAStateMsg)
 		end
 
-	elseif #passedStates > 0 then 
-		initialState = passedStates[1] -- it's guaranteed it'll be a state
+	elseif #states > 0 then 
+		initialState = states[1] -- it's guaranteed it'll be a state
 	else
 		initialState = Sorbet.State() -- empty placeholder state
 		warn("No initial state set")
@@ -133,23 +150,25 @@ function Sorbet.Machine(creationArguments: {
 	--# init priv data tables
 	local entitiesStateMap = {}
 	local activeEntities   = {}
-	local states           = {}
+	local statesLut        = {}
+	local entitiesLut      = {}
 
-	for _, entity in passedEntities do
+	for _, entity in entities do
+		entitiesLut[entity] = true
 		entitiesStateMap[entity] = initialState
 	end
 
-	for _, state in passedStates do
-		states[state] = true
+	for _, state in states do
+		statesLut[state] = true
 	end
-	
-	
+
+
 	fsmData[self] = {
 		Activated        = true,
 		EntitiesStateMap = entitiesStateMap,
 		ActiveEntities   = activeEntities,
-		States           = states,
-		Entities         = passedEntities,
+		States           = statesLut,
+		Entities         = entitiesLut,
 		InitialState     = initialState,
 	}
 
@@ -168,39 +187,39 @@ function Sorbet.Machine(creationArguments: {
 end
 
 
-function Sorbet.State(stateInfo: StateInfo?)
-	local info = stateInfo or {}
-	stateCount += 1
-	local self = {
-		Name        = info.Name or tostring(stateCount),
-		Enter       = info.Enter or nop,
-		Exit        = info.Exit or nop,
-		Update      = info.Update or nop,
-		Entered     = Signal.new(),
-		Exited      = Signal.new(),
-	}
+export type FSM = typeof(Sorbet.Machine({},{}, Sorbet.State()))
 
-	statesData[self] = {
-		Entered = self.Entered:Connect(self.Enter),
-		Exited  = self.Exited:Connect(self.Exit)
-	}
-
-
-	return self
+--==/ Setters ===============================||>
+function Sorbet.SetInitialState(self: FSM, state: State|string?)
+	local thisPrivData = fsmData[self]
+	local resolvedState = ResolveState(thisPrivData, state)
+	if resolvedState then
+		thisPrivData.InitialState = resolvedState
+	else
+		error(tostring(state).." "..stateNotAddedMsg)
+	end
 end
 
-export type FSM = typeof(Sorbet.Machine({Entities = {}, States = {}, InitialState = Sorbet.State()}))
+function Sorbet.SetMachineActiveState(self: FSM, isActivated: boolean)
+	local thisPrivData = fsmData[self]
+	assert(type(isActivated) == "boolean", "Bad argument, expected boolean ")
+	thisPrivData.Activated = isActivated
+end
 
 
 --==/ Add/Remove State ===============================||>
-function Sorbet.AddState(self: FSM, state: State)
+function Sorbet.AddState(self: FSM, state: State, asInitial: boolean?)
 	local thisPrivData = fsmData[self]
-	local states = thisPrivData.States 
-	
+	local states = thisPrivData.States
+	assert(type(asInitial) == "boolean" or type(asInitial) == "nil", "Bad argument #2, expected boolean or nil")
+
 	if not thisPrivData.States[state] and states[state] then
 		states[state] = state
+		if asInitial then
+			thisPrivData.InitialState = asInitial
+		end
 	else 
-		error(tostring(state).. "is not a state!")
+		error(tostring(state).." "..isNotAStateMsg)
 	end
 end
 
@@ -225,7 +244,7 @@ function Sorbet.AddEntity(self: FSM, entity: Entity, initialState: State | strin
 	initialState             = ResolveState(thisPrivData, initialState)
 	entitiesStateMap[entity] = initialState or thisPrivData.InitialState
 	entities[entity]         = true
-	
+
 	self.EntityAdded:Fire(entity, initialState)
 end
 
@@ -244,11 +263,11 @@ function Sorbet.StartEntity(self: FSM, entity, startInState: State | string?)
 	local thisPrivData = fsmData[self]
 	if not thisPrivData.Activated then return end
 	
-	
+
 	local entitiesStateMap = thisPrivData.EntitiesStateMap
 	local entityState = entitiesStateMap[entity]
 	startInState = ResolveState(thisPrivData, startInState) --# Validate startInState
-	
+
 	if entityState then
 		local activeEntities = thisPrivData.ActiveEntities
 		entityState              = startInState or entityState
@@ -256,12 +275,15 @@ function Sorbet.StartEntity(self: FSM, entity, startInState: State | string?)
 		activeEntities[entity]   = true
 
 		entityState.Entered:Fire(entity, self, entityState)
+
+		--entityState:Enter(entity, self, entityState)
+		
 		self.EntityStarted:Fire(entity)
 	else
-		error(tostring(entity).. "Has not been added to the state machine!")
+		error(tostring(entity).. " "..entityNotAddedMsg)
 	end
 end
-	
+
 
 function Sorbet.StopEntity(self: FSM, entity: Entity)
 	local thisPrivData   = fsmData[self]
@@ -270,7 +292,7 @@ function Sorbet.StopEntity(self: FSM, entity: Entity)
 
 	if entityState then
 		local isEntityActive = activeEntities[entity] 
-		
+
 		if isEntityActive then
 			activeEntities[entity] = nil
 			entityState.Exited:Fire(entity, self, entityState)
@@ -280,7 +302,7 @@ function Sorbet.StopEntity(self: FSM, entity: Entity)
 			--warn(entity, "is already inactive")
 		end
 	else
-		error(tostring(entity).. "Has not been added to the state machine!")
+		error(tostring(entity).." ".. entityNotAddedMsg)
 	end
 end
 
@@ -318,27 +340,29 @@ function Sorbet.ChangeStateAsync(self: FSM, entity: Entity, newState: State | st
 	if entityState then
 		newState = ResolveState(thisPrivData, newState) 
 		if newState then
-			local oldState = entityState
+
 
 			entityState.Exited:Fire(entity, self, entityState)
 			--# prevents Entered from firing if the entity was removed 
 			--# or the FSM was de-activated
 			if not activeEntities[entity] or not thisPrivData.Activated then return end
 
-			oldState    = entityState
+			local oldState    = entityState
 			entityState = newState
-			
+
 			entityState.Entered:Fire(entity, self, entityState)
 			thisPrivData.EntitiesStateMap[entity] = entityState
 
 			self.StateChanged:Fire(entity, newState, oldState)
+		else
+			error(tostring(newState).." "..stateNotAddedMsg)
 		end
 	else
-		error(tostring(entity).. "Has not been added to the state machine!")
+		error(tostring(entity).." "..entityNotAddedMsg)
 	end
 end
 
-function Sorbet.ChangeState(self: FSM, entity: Entity, newState: State | string?)
+function Sorbet.ChangeState(self: FSM, entity: Entity, newState: State | string?): true?
 	local thisPrivData   = fsmData[self]
 	if not thisPrivData.Activated then return end
 	local activeEntities = thisPrivData.ActiveEntities
@@ -348,23 +372,26 @@ function Sorbet.ChangeState(self: FSM, entity: Entity, newState: State | string?
 	if entityState then
 		newState = ResolveState(thisPrivData, newState) 
 		if newState then
-			local oldState = entityState
 
 			entityState.Exit(entity, self, entityState)
 			--# prevents Entered from firing if the entity was removed 
 			--# or the FSM was de-activated
 			if not activeEntities[entity] or not thisPrivData.Activated then return end
 
-			oldState    = entityState
+			local oldState    = entityState
 			entityState = newState
-			
+
 			entityState.Enter(entity, self, entityState)
 			thisPrivData.EntitiesStateMap[entity] = entityState
 
 			self.StateChanged:Fire(entity, newState, oldState)
+
+			return true
+		else
+			error(tostring(newState).." "..stateNotAddedMsg)
 		end
 	else
-		error(tostring(entity).. "Has not been added to the state machine!")
+		error(tostring(entity).." "..entityNotAddedMsg)
 	end
 end
 
@@ -379,6 +406,8 @@ end
 
 
 --==/ Getters/ bool expressions ===============================||>
+--! Warning, don't modify any of these returned tables, it will cause serious bugs.
+--! Also these getters suck... Should rethink better ones
 function Sorbet.GetCurrentState(self: FSM, entity: Entity)
 	local thisPrivData = fsmData[self]
 	return thisPrivData.EntitiesStateMap[entity]
