@@ -56,8 +56,9 @@ local function GetSetDifference(a, b)
 	return difference
 end
 
---# it's not bool function so user can pass the name of a state (a string) 
---#	and still get a state, also makes sure the asked state is actually registered
+--# Allows me to get a state from the fsm by passing either the state object OR
+--# just the state name string... This ensures that the requested state is actually
+--# in the fsm which ensures correctness!
 local function ResolveState(privData: PrivData, stateToGet: State | string?): State | nil
 	if stateToGet ~= nil and type(stateToGet) == "table" or type(stateToGet) == "string"  then
 		for state in privData.States do
