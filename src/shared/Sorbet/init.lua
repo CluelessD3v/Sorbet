@@ -330,6 +330,8 @@ function Sorbet.Stop(self: FSM)
 end
 
 --==/ transforms ===============================||>
+--# Prevents recursive state changes wrecking havoc on the fsm... but removes
+--# control from the user!
 function Sorbet.ChangeStateAsync(self: FSM, entity: Entity, newState: State | string?)
 	local thisPrivData   = fsmData[self]
 	if not thisPrivData.Activated then return end
@@ -362,6 +364,8 @@ function Sorbet.ChangeStateAsync(self: FSM, entity: Entity, newState: State | st
 	end
 end
 
+--# Syncronous State change, allows the user to handle state changes however it
+--# sees fit
 function Sorbet.ChangeState(self: FSM, entity: Entity, newState: State | string?): true?
 	local thisPrivData   = fsmData[self]
 	if not thisPrivData.Activated then return end
