@@ -161,8 +161,7 @@ Sorbet.state = function(name: string, callbacks:{
 end
 
 
-Sorbet.machine = function(entities: {any}, states: {State}, initialState: State)
-    --//XXX states should prob be validated so they're actually states
+Sorbet.machine = function(entities: {any}, states: {State}, initialState: State?)
     _assertLevel(type(states) == "table", "Bad argumetn 2# states must be a table of states not a ".. typeof(states))
 
     initialState = if initialState then initialState else states[1]
@@ -173,11 +172,11 @@ Sorbet.machine = function(entities: {any}, states: {State}, initialState: State)
 
     local entitiesLookup  = {}:: {[Entity]: true}
     local entitiesToState = {}:: {[Entity]: State}
+
     for _, entity: any in entities do
         entitiesToState[entity] = initialState
         entitiesLookup[entity] = true
     end
-
     
 
     local self = {
@@ -295,22 +294,22 @@ Sorbet.Update = function(self: StateMachine, dt: number)
 end
 
 
-Sorbet.ChangeState = function(self: StateMachine, entity: Entity, toState: State)
+Sorbet.ChangeState = function(self: StateMachine, entity: Entity, toState: State | string)
     if not self.Entities[entity] then
         warn(entityNotAddedMsg)
         return
     end
 
-
-    if ResolveState(self, toState) then
+    local newState = ResolveState(self, toState)
+    if newState then
         local oldState = self.EntitiesToState[entity] 
 
         
-        oldState.OnExit(entity, self, oldState, toState)
-        self.EntitiesToState[entity] = toState
-        toState.OnEnter(entity, self, toState, oldState)
+        oldState.OnExit(entity, self, oldState, newState)
+        self.EntitiesToState[entity] = newState
+        newState.OnEnter(entity, self, newState, oldState)
 
-        self.ChangedState:Fire(entity, toState, oldState)
+        self.ChangedState:Fire(entity, newState, oldState)
     end
 end
 
