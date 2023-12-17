@@ -1,5 +1,53 @@
+--!strict
+
 local Signal = require(script.Signal)
 local nop = function()end
+
+type Entity = any
+
+export type State = {
+    Name: string,
+    OnEnter  : (entity: Entity, stateMachine: StateMachine, state: State, fromState: State?) -> nil,
+    OnUpdate : (entity: Entity, stateMachine: StateMachine, state: State, dt: number) -> nil,
+    OnExit   : (entity: Entity, stateMachine: StateMachine, state: State, toState: State?) -> nil,
+
+    _Enter: typeof(Signal.new()),
+    _Exit: typeof(Signal.new()),
+    _Connections: {
+        Enter: RBXScriptConnection,
+        Exit: RBXScriptConnection,
+    }
+}
+
+
+export type StateMachine = {
+    Entities        : {[Entity]: true},
+    States          : {[string]: State},
+    ActiveEntities  : {[Entity]: true},
+    InitialState    : State,
+    EntitiesToState : {[Entity]:State},
+    
+    AddedEntity   : typeof(Signal.new()),
+    RemovedEntity : typeof(Signal.new()),
+    StartedEntity : typeof(Signal.new()),
+    StoppedEntity : typeof(Signal.new()),
+    ChangedState  : typeof(Signal.new()),
+
+    AddEntity            : (self: StateMachine, entity: Entity, inState: State) -> nil,
+    RemoveEntity         : (self: StateMachine, entity: Entity) -> nil,
+    StartEntity          : (self: StateMachine, entity: Entity, inState: State) -> nil,
+    StopEntity           : (self: StateMachine, entity: Entity) -> nil,
+    Start                : (self: StateMachine, inState: State) -> nil,
+    Stop                 : (self: StateMachine) -> nil,
+    Update               : (self: StateMachine, dt: number) -> nil,
+    ChangeState          : (self: StateMachine, entity: Entity, toState: State) -> nil,
+    ChangeStateFromEvent : (self: StateMachine, entity: Entity, toState: State) -> nil,
+}
+
+
+
+
+
 
 
 local entityNotAddedMsg = "Has not been added to the state machine! Remember to add the entity into the FSM first through FSM:AddEntity() if it was not added at construction"
@@ -35,27 +83,27 @@ local function _assertLevel(condition: any, message: string, level: number?)
 end
 
 
-local function ResolveState(self: StateMachine, stateToResolve: State | string)
-    
+local function ResolveState(self: StateMachine, stateToResolve: State | string): State | nil
     if type(stateToResolve) == "table" then
         for _, state in self.States do
             if state == stateToResolve then
-                return stateToResolve
+               return state
             end
         end
         
     elseif type(stateToResolve) == "string" then
-        for stateName in self.States do
-            if stateToResolve.Name == stateName then
-                return stateToResolve
+        for stateName, state in self.States do
+            if stateToResolve == stateName then
+                return state
             end          
         end
     else
         warn("Given state is not the correct type!", typeof(stateToResolve))
-        return
+        return 
     end
 
     warn(stateToResolve, stateNotAddedMsg)
+    return
 end
 
 
@@ -77,13 +125,12 @@ end
 -- !== ================================================================================||>
 
 local Sorbet = {}
-Sorbet.States   = {}
 
 --==/ Constructors ===============================||>
 Sorbet.state = function(name: string, callbacks:{
-    OnEnter  : (entity: Entity, stateMachine: StateMachine, state: State, fromState: State) -> nil?,
-    OnUpdate : (entity: Entity, stateMachine: StateMachine, state: State, dt: number?) -> nil?,
-    OnExit   : (entity: Entity, stateMachine: StateMachine, state: State, toState: State) -> nil?,
+    OnEnter  : ((entity: Entity, stateMachine: StateMachine, state: State, fromState: State) -> nil)?,
+    OnUpdate : ((entity: Entity, stateMachine: StateMachine, state: State, dt: number?) -> nil)?,
+    OnExit   : ((entity: Entity, stateMachine: StateMachine, state: State, toState: State) -> nil)?,
 })
 
     _assertLevel(type(name) == "string", "Bad argument 1# expected string not ".. typeof(name))
@@ -91,26 +138,30 @@ Sorbet.state = function(name: string, callbacks:{
     callbacks.OnUpdate = callbacks.OnUpdate or nop
     callbacks.OnExit   = callbacks.OnExit or nop
     
+    local enter = Signal.new()
+    local exit = Signal.new()
+
     
-    local self: State = {
+    local self = {
         Name         = name,
         OnEnter      = callbacks.OnEnter,
         OnExit       = callbacks.OnExit,
         OnUpdate     = callbacks.OnUpdate,
 
-        _Enter       = Signal.new(),
-        _Exit        = Signal.new(),
-        _Connections = {}
-    }
+        _Enter       = enter,
+        _Exit        = exit,
+        _Connections = {
+            Enter = enter:Connect(callbacks.OnEnter),
+            Exit  = exit:Connect(callbacks.OnExit),
+        }
+    } 
 
-    self._Connections._Enter = self.Entered:Connect(self.OnEnter)
-    self._Connections._Exit  = self.Exited:Connect(self.OnExit)
 
     return self
 end
 
 
-Sorbet.machine = function(entities: Array<any>, states: Array<State>, initialState: State)
+Sorbet.machine = function(entities: {any}, states: {State}, initialState: State)
     --//XXX states should prob be validated so they're actually states
     _assertLevel(type(states) == "table", "Bad argumetn 2# states must be a table of states not a ".. typeof(states))
 
@@ -120,31 +171,34 @@ Sorbet.machine = function(entities: Array<any>, states: Array<State>, initialSta
         statesDictionary[state.Name] = state
     end
 
-    local entitiesLookup  = {}
-    local entitiesToState = {}
-    for _, entity in entities do
+    local entitiesLookup  = {}:: {[Entity]: true}
+    local entitiesToState = {}:: {[Entity]: State}
+    for _, entity: any in entities do
         entitiesToState[entity] = initialState
         entitiesLookup[entity] = true
     end
 
     
 
-    local self: StateMachine = {
+    local self = {
         Entities       = entitiesLookup,
         States         = statesDictionary,
         ActiveEntities = {},
         InitialState   = initialState,
 
-
-        EntityAdded    = Signal.new(),
+        AddedEntity   = Signal.new(),
+        RemovedEntity = Signal.new(),
+        StartedEntity = Signal.new(),
+        StoppedEntity = Signal.new(),
+        ChangedState  = Signal.new(),
 
         EntitiesToState = entitiesToState,
-    }
+    }:: StateMachine
     
 
     --# inherit sorbet functions
     for k, v in Sorbet do
-        if v == "state" then continue end
+        if v == "state" or v == "machine" then continue end
         self[k] = v 
     end
 
@@ -167,7 +221,7 @@ Sorbet.AddEntity = function(self: StateMachine, entity: Entity, initialState: St
     self.Entities[entity]        = true
     self.EntitiesToState[entity] = initialState or self.InitialState
 
-    self.EntityAdded:Fire(entity, initialState)
+    self.AddedEntity:Fire(entity, initialState)
 end
 
 
@@ -178,18 +232,18 @@ Sorbet.RemoveEntity = function(self: StateMachine, entity: Entity)
     end
 
 
-    self.ActiveEntities[entity]   = nil
-    self.Entities[entity]         = nil
+    self.ActiveEntities[entity]  = nil
+    self.Entities[entity]        = nil
     self.EntitiesToState[entity] = nil
     
 
-    self.EntityRemoved:Fire(entity)
+    self.RemovedEntity:Fire(entity)
 end
 
 
 
 Sorbet.StartEntity = function(self: StateMachine, entity, inState: State)
-    local state = ResolveState(inState) or self.InitialState
+    local state = ResolveState(self, inState) or self.InitialState
 
     if not self.Entities[entity] then
         self.Entities[entity] = entity
@@ -201,7 +255,7 @@ Sorbet.StartEntity = function(self: StateMachine, entity, inState: State)
     state._Enter:Fire(entity, self, state, nil)
 
 
-    self.ActivatedEntity:Fire(entity, inState)
+    self.StartedEntity:Fire(entity, inState)
 end
 
 
@@ -214,7 +268,7 @@ Sorbet.StopEntity = function(self: StateMachine, entity)
     currentState._Exit:Fire(entity, self, currentState, nil)
 
 
-    self.EntityStopped:Fire()
+    self.StoppedEntity:Fire()
 end
 
 
@@ -234,7 +288,7 @@ Sorbet.Stop = function(self: StateMachine)
 end
 
 
-Sorbet.Update = function(self: StateMachine, dt: number?)
+Sorbet.Update = function(self: StateMachine, dt: number)
     for entity, state in self.EntitiesToState do
         state.OnUpdate(entity, self, state, dt)
     end
@@ -248,7 +302,7 @@ Sorbet.ChangeState = function(self: StateMachine, entity: Entity, toState: State
     end
 
 
-    if ResolveState(toState) then
+    if ResolveState(self, toState) then
         local oldState = self.EntitiesToState[entity] 
 
         
@@ -261,49 +315,26 @@ Sorbet.ChangeState = function(self: StateMachine, entity: Entity, toState: State
 end
 
 
-Sorbet.ChangeStateFromEvent = function(self: StateMachine, entity: Entity, toState: State)
+Sorbet.ChangeStateFromEvent = function(self: StateMachine, entity: Entity, toState: State | string)
     if not self.Entities[entity] then
         warn(entityNotAddedMsg)
         return
     end
 
-    if ResolveState(toState) then
-        local oldState = self.EntitiesToState[entity] 
+    local newState = ResolveState(self, toState)
+    if newState then
+        local oldState = self.EntitiesToState[entity]
 
+        oldState._Exit:Fire(entity, self, oldState, newState)
+        self.EntitiesToState[entity] = newState
+        newState._Enter:Fire(entity, self, newState, oldState)
 
-        oldState._Exit:Fire(entity, self, oldState, toState)
-        self.EntitiesToState[entity] = toState
-        toState._Enter:Fire(entity, self, toState, oldState)
-
-
-        self.ChangedState:Fire(entity, toState, oldState)
+        self.ChangedState:Fire(entity, newState, oldState)
     end
 end
 
 
 
-
-
-export type StateMachine = {
-    Entities        : Array<Entity>,
-    States          : Dictionary<State>,
-    ActiveEntities  : Array<Entity>,
-    InitialState    : State,
-    EntitiesToState : Map<Entity, State>,
-}
-
-
-export type State = {
-    Name: string,
-    OnEnter  : (entity: Entity, stateMachine: StateMachine, state: State, fromState: State) -> nil,
-    OnUpdate : (entity: Entity, stateMachine: StateMachine, state: State, dt: number?) -> nil,
-    OnExit   : (entity: Entity, stateMachine: StateMachine, state: State, toState: State) -> nil,
-}
-
-type Entity        = any
-type Array<T>      = {T}
-type Dictionary<T> = {[string]: T}
-type Map<K, V> = {[K]: V}
 
 
 return Sorbet
