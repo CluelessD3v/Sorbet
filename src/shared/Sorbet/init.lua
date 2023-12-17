@@ -1,4 +1,4 @@
---!strict
+--!nonstrict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Signal = require(ReplicatedStorage.Packages.signal)
@@ -35,6 +35,8 @@ export type StateMachine = {
     StoppedEntity : typeof(Signal.new()),
     ChangedState  : typeof(Signal.new()),
 
+    AddState             : (self: StateMachine, newState: State, shouldBeInitial: boolean?) -> nil,
+    RemoveState          : (self: StateMachine, state: State) -> nil,
     AddEntity            : (self: StateMachine, entity: Entity, inState: State) -> nil,
     RemoveEntity         : (self: StateMachine, entity: Entity) -> nil,
     StartEntity          : (self: StateMachine, entity: Entity, inState: State) -> nil,
@@ -210,9 +212,9 @@ end
 
 
 --==/ Methods ===============================||>
-Sorbet.AddState = function(self: StateMachine, newState: State, makeInitial: boolean?)
+Sorbet.AddState = function(self: StateMachine, newState: State, shouldBeInitial: boolean?)
     self.States[newState.Name] = newState
-    if makeInitial then
+    if shouldBeInitial then
         self.InitialState = newState
     end
 end
