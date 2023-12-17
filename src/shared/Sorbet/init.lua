@@ -1,6 +1,8 @@
 --!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Signal = require(script.Signal)
+local Signal = require(ReplicatedStorage.Packages.signal)
+
 local nop = function()end
 
 type Entity = any
@@ -98,11 +100,11 @@ local function ResolveState(self: StateMachine, stateToResolve: State | string):
             end          
         end
     else
-        warn("Given state is not the correct type!", typeof(stateToResolve))
+        error("Given state is not the correct type!".. typeof(stateToResolve), 2)
         return 
     end
 
-    warn(stateToResolve, stateNotAddedMsg)
+    error(tostring(stateToResolve)..stateNotAddedMsg)
     return
 end
 
@@ -144,7 +146,7 @@ Sorbet.state = function(name: string, callbacks:{
     
     local self = {
         Name         = name,
-        OnEnter      = enter,
+        OnEnter      = onEnter,
         OnExit       = onExit,
         OnUpdate     = onUpdate,
 
@@ -162,9 +164,10 @@ end
 
 
 Sorbet.machine = function(entities: {any}, states: {State}, initialState: State?)
+    --//XXX states should prob be validated so they're actually states
     _assertLevel(type(states) == "table", "Bad argumetn 2# states must be a table of states not a ".. typeof(states))
 
-    initialState = if initialState then initialState else states[1]
+    local initState = if initialState then initialState else states[1]
     local statesDictionary = {}
     for _, state in states do 
         statesDictionary[state.Name] = state
@@ -172,18 +175,18 @@ Sorbet.machine = function(entities: {any}, states: {State}, initialState: State?
 
     local entitiesLookup  = {}:: {[Entity]: true}
     local entitiesToState = {}:: {[Entity]: State}
-
     for _, entity: any in entities do
-        entitiesToState[entity] = initialState
+        entitiesToState[entity] = initState
         entitiesLookup[entity] = true
     end
+
     
 
     local self = {
         Entities       = entitiesLookup,
         States         = statesDictionary,
         ActiveEntities = {},
-        InitialState   = initialState,
+        InitialState   = initState,
 
         AddedEntity   = Signal.new(),
         RemovedEntity = Signal.new(),
@@ -207,6 +210,18 @@ end
 
 
 --==/ Methods ===============================||>
+Sorbet.AddState = function(self: StateMachine, newState: State, makeInitial: boolean?)
+    self.States[newState.Name] = newState
+    if makeInitial then
+        self.InitialState = newState
+    end
+end
+
+Sorbet.RemoveState = function(self: StateMachine, state: State)
+    self.States[state.Name] = nil
+end
+
+
 
 Sorbet.AddEntity = function(self: StateMachine, entity: Entity, initialState: State?)
     if self.Entities[entity] then
