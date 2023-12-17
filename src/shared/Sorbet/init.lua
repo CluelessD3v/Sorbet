@@ -134,9 +134,9 @@ Sorbet.state = function(name: string, callbacks:{
 })
 
     _assertLevel(type(name) == "string", "Bad argument 1# expected string not ".. typeof(name))
-    callbacks.OnEnter  = callbacks.OnEnter or nop
-    callbacks.OnUpdate = callbacks.OnUpdate or nop
-    callbacks.OnExit   = callbacks.OnExit or nop
+	local onEnter = callbacks.OnEnter or nop
+	local onUpdate = callbacks.OnUpdate or nop
+	local onExit = callbacks.OnExit or nop
     
     local enter = Signal.new()
     local exit = Signal.new()
@@ -144,15 +144,15 @@ Sorbet.state = function(name: string, callbacks:{
     
     local self = {
         Name         = name,
-        OnEnter      = callbacks.OnEnter,
-        OnExit       = callbacks.OnExit,
-        OnUpdate     = callbacks.OnUpdate,
+        OnEnter      = enter,
+        OnExit       = onExit,
+        OnUpdate     = onUpdate,
 
         _Enter       = enter,
         _Exit        = exit,
         _Connections = {
-            Enter = enter:Connect(callbacks.OnEnter),
-            Exit  = exit:Connect(callbacks.OnExit),
+            Enter = enter:Connect(onEnter),
+            Exit  = exit:Connect(onExit),
         }
     } 
 
@@ -197,7 +197,7 @@ Sorbet.machine = function(entities: {any}, states: {State}, initialState: State)
     
 
     --# inherit sorbet functions
-    for k, v in Sorbet do
+    for k, v in pairs(Sorbet) do
         if v == "state" or v == "machine" then continue end
         self[k] = v 
     end
@@ -252,7 +252,7 @@ Sorbet.StartEntity = function(self: StateMachine, entity, inState: State)
 
     self.EntitiesToState[entity] = state
     self.ActiveEntities[entity]   = true
-    state._Enter:Fire(entity, self, state, nil)
+    state._Enter:Fire(entity, self, state, nil :: State?)
 
 
     self.StartedEntity:Fire(entity, inState)
@@ -265,7 +265,7 @@ Sorbet.StopEntity = function(self: StateMachine, entity)
     
     
     self.ActiveEntities[entity] = nil
-    currentState._Exit:Fire(entity, self, currentState, nil)
+    currentState._Exit:Fire(entity, self, currentState, nil :: State?)
 
 
     self.StoppedEntity:Fire()
