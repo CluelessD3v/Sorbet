@@ -24,6 +24,13 @@
 --   sleitnick - August 3rd, 2021 - Modified for Knit.                        --
 -- -----------------------------------------------------------------------------
 
+--[[
+    Clueless_Dev - August 30th, 2023 - Added into Sorbet
+    Because I cannot be bothered to make a roblox pacakage version
+    that includes the signal depedency sooo I baked it into the lib.
+--]]
+
+
 -- Signal types
 export type Connection = {
 	Disconnect: (self: Connection) -> (),
